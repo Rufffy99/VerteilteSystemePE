@@ -1,5 +1,3 @@
-
-
 import socket
 import threading
 import time
@@ -49,9 +47,19 @@ def handle_post_task(data, addr, sock):
     # Dispatch immediately for simplicity
     worker_address = lookup_worker(task.type)
     if worker_address:
-        host, port = worker_address.split(":")
-        send_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        send_sock.sendto(encode_message("TASK", task.__dict__), (host, int(port)))
+        try:
+            host, port = worker_address.split(":")
+            if host and port.isdigit():
+                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as send_sock:
+                    send_sock.sendto(encode_message("TASK", task.to_dict()), (host, int(port)))
+            else:
+                raise ValueError("Invalid address format")
+        except Exception as e:
+            sock.sendto(encode_message("RESPONSE", {"error": f"Dispatch failed: {str(e)}"}), addr)
+            return
+    else:
+        sock.sendto(encode_message("RESPONSE", {"error": "No worker available for task type"}), addr)
+        return
 
     sock.sendto(encode_message("RESPONSE", {"message": f"Task received, ID = {task.id}"}), addr)
 
