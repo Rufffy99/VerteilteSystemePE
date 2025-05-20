@@ -2,6 +2,8 @@ import socket
 import threading
 import time
 import importlib
+import logging
+import os
 from shared.protocol import (
     decode_message, encode_message,
     REGISTER_WORKER, RESULT_RETURN
@@ -15,6 +17,15 @@ NAMESERVICE_ADDRESS = ("nameservice", 5000)
 
 WORKER_TYPE = sys.argv[1] if len(sys.argv) > 1 else "reverse"
 WORKER_PORT = 6000
+
+# Logging configuration
+LOG_DIR = os.environ.get("LOG_DIR", ".")
+LOG_PATH = os.path.join(LOG_DIR, f"worker_{WORKER_TYPE}.log")
+logging.basicConfig(
+    filename=LOG_PATH,
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s"
+)
 
 RECEIVE_BUFFER_SIZE = 4096
 
@@ -53,7 +64,7 @@ def register_with_nameservice():
         "address": f"worker:{WORKER_PORT}"
     })
     sock.sendto(msg, NAMESERVICE_ADDRESS)
-    print(f"[Worker-{WORKER_TYPE}] Registered with nameservice")
+    logging.info(f"Registered with nameservice as type '{WORKER_TYPE}' on port {WORKER_PORT}")
 
 
 def send_result(task_id, result):
@@ -75,7 +86,7 @@ def send_result(task_id, result):
         "result": result
     })
     sock.sendto(msg, DISPATCHER_ADDRESS)
-    print(f"[Worker-{WORKER_TYPE}] Sent result for task {task_id}")
+    logging.info(f"Sent result for task {task_id}: {result}")
 
 
 def process_task(task_data):
@@ -95,6 +106,7 @@ def process_task(task_data):
         - Sends the task ID and the resulting value (or error message) using send_result.
     """
     task = Task(**task_data)
+    logging.info(f"Processing task {task.id} of type '{task.type}' with payload: {task.payload}")
     try:
         if task.type not in ALLOWED_TASK_TYPES:
             raise ValueError(f"Invalid task type: {task.type}")
@@ -104,6 +116,7 @@ def process_task(task_data):
     except Exception as e:
         result = f"Error processing task: {e}"
         task.status = "failed"
+        logging.error(f"Failed to process task {task.id}: {e}")
     finally:
         task.timestamp_completed = time.time()
     
@@ -128,7 +141,7 @@ def run_worker():
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind(("0.0.0.0", WORKER_PORT))
-    print(f"[Worker-{WORKER_TYPE}] Listening on port {WORKER_PORT}")
+    logging.info(f"Listening on port {WORKER_PORT} as type '{WORKER_TYPE}'")
 
     while True:
         data, addr = sock.recvfrom(RECEIVE_BUFFER_SIZE)

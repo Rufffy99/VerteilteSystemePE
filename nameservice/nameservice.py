@@ -1,6 +1,8 @@
 import socket
 import threading
 import json
+import logging
+import os
 from shared.protocol import decode_message, encode_message, REGISTER_WORKER, LOOKUP_WORKER, DEREGISTER_WORKER
 
 PORT = 5000
@@ -8,6 +10,15 @@ HOST = "0.0.0.0"
 
 registry = {}
 registry_lock = threading.Lock()
+
+# Logging setup
+LOG_DIR = os.environ.get("LOG_DIR", ".")
+LOG_PATH = os.path.join(LOG_DIR, "nameservice.log")
+logging.basicConfig(
+    filename=LOG_PATH,
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s"
+)
 
 
 def handle_request(data, addr, sock):
@@ -44,6 +55,7 @@ def handle_request(data, addr, sock):
         with registry_lock:
             registry[wtype] = address
         response = {"message": f"Registered {wtype} at {address}"}
+        logging.info(f"Registered worker '{wtype}' at address {address}")
     
     elif msg_type == LOOKUP_WORKER:
         wtype = content.get("type")
@@ -51,8 +63,10 @@ def handle_request(data, addr, sock):
             address = registry.get(wtype)
         if address:
             response = {"address": address}
+            logging.info(f"Lookup for worker type '{wtype}' succeeded: {address}")
         else:
             response = {"error": f"No worker found for type '{wtype}'"}
+            logging.warning(f"Lookup for worker type '{wtype}' failed: no entry found")
 
     elif msg_type == DEREGISTER_WORKER:
         address = content.get("address")
@@ -60,9 +74,11 @@ def handle_request(data, addr, sock):
         for k in to_remove:
             del registry[k]
         response = {"message": f"Deregistered {len(to_remove)} entries"}
+        logging.info(f"Deregistered {len(to_remove)} entries for address {address}")
     
     else:
         response = {"error": "Unknown message type"}
+        logging.warning(f"Received unknown message type: {msg_type}")
 
     sock.sendto(encode_message("RESPONSE", response), addr)
 
@@ -82,7 +98,7 @@ def run_nameservice():
     
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind((HOST, PORT))
-    print(f"[NameService] Listening on {HOST}:{PORT}")
+    logging.info(f"[NameService] Listening on {HOST}:{PORT}")
     
     while True:
         data, addr = sock.recvfrom(4096)
