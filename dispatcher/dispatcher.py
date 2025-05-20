@@ -18,16 +18,16 @@ lock = threading.Lock()
 
 
 def lookup_worker(task_type):
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    msg = encode_message(LOOKUP_WORKER, {"type": task_type})
-    sock.sendto(msg, NAMESERVICE_ADDRESS)
-    sock.settimeout(2.0)
-    try:
-        data, _ = sock.recvfrom(4096)
-        _, response = decode_message(data)
-        return response.get("address")
-    except socket.timeout:
-        return None
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        msg = encode_message(LOOKUP_WORKER, {"type": task_type})
+        sock.sendto(msg, NAMESERVICE_ADDRESS)
+        sock.settimeout(2.0)
+        try:
+            data, _ = sock.recvfrom(4096)
+            _, response = decode_message(data)
+            return response.get("address")
+        except socket.timeout:
+            return None
 
 
 def handle_post_task(data, addr, sock):
