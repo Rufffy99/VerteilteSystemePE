@@ -40,12 +40,14 @@ def handle_request(data, addr, sock):
     if msg_type == REGISTER_WORKER:
         wtype = content.get("type")
         address = content.get("address")
-        registry[wtype] = address
+        with registry_lock:
+            registry[wtype] = address
         response = {"message": f"Registered {wtype} at {address}"}
     
     elif msg_type == LOOKUP_WORKER:
         wtype = content.get("type")
-        address = registry.get(wtype)
+        with registry_lock:
+            address = registry.get(wtype)
         if address:
             response = {"address": address}
         else:
