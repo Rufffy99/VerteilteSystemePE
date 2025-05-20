@@ -84,6 +84,8 @@ def process_task(task_data):
     """
     task = Task(**task_data)
     try:
+        if task.type not in ALLOWED_TASK_TYPES:
+            raise ValueError(f"Invalid task type: {task.type}")
         module = importlib.import_module(f"worker.worker_types.{task.type}")
         result = module.handle(task.payload)
         task.status = "done"
