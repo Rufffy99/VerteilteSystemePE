@@ -7,6 +7,7 @@ PORT = 5000
 HOST = "0.0.0.0"
 
 registry = {}
+registry_lock = threading.Lock()
 
 
 def handle_request(data, addr, sock):
