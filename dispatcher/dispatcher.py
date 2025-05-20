@@ -49,10 +49,15 @@ def handle_post_task(data, addr, sock):
     # Dispatch immediately for simplicity
     worker_address = lookup_worker(task.type)
     if worker_address:
-        host, port = worker_address.split(":")
-        send_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        send_sock.sendto(encode_message("TASK", task.__dict__), (host, int(port)))
-
+        if ":" in worker_address and len(worker_address.split(":")) == 2:
+            host, port = worker_address.split(":")
+            if host and port.isdigit():
+                send_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                send_sock.sendto(encode_message("TASK", task.__dict__), (host, int(port)))
+            else:
+                print(f"[Error] Invalid worker address format: {worker_address}")
+        else:
+            print(f"[Error] Invalid worker address format: {worker_address}")
     sock.sendto(encode_message("RESPONSE", {"message": f"Task received, ID = {task.id}"}), addr)
 
 
