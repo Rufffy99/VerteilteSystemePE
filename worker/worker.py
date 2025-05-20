@@ -83,13 +83,15 @@ def process_task(task_data):
         - Sends the task ID and the resulting value (or error message) using send_result.
     """
     task = Task(**task_data)
-    task.timestamp_completed = time.time()
-    task.status = "done"
     try:
         module = importlib.import_module(f"worker.worker_types.{task.type}")
         result = module.handle(task.payload)
+        task.status = "done"
     except Exception as e:
         result = f"Error processing task: {e}"
+        task.status = "failed"
+    finally:
+        task.timestamp_completed = time.time()
     
     send_result(task.id, result)
 
