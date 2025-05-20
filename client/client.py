@@ -1,7 +1,16 @@
 import socket
 import json
 import sys
+import logging
+import os
 from shared.protocol import encode_message, decode_message, POST_TASK, GET_RESULT
+
+LOG_DIR = os.environ.get("LOG_DIR", ".")
+logging.basicConfig(
+    filename=os.path.join(LOG_DIR, "client.log"),
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
 DISPATCHER_ADDRESS = ("dispatcher", 4000)
 
@@ -31,9 +40,11 @@ def send_task(task_type, payload):
             "payload": payload
         })
         sock.sendto(msg, DISPATCHER_ADDRESS)
+        logging.info(f"Sent task to dispatcher: type={task_type}, payload={payload}")
 
         data, _ = sock.recvfrom(4096)
         _, response = decode_message(data)
+        logging.info(f"Dispatcher responded to task submission: {response}")
         print("→ Aufgabe gesendet:", response)
 
 
@@ -58,9 +69,11 @@ def request_result(task_id):
             "task_id": task_id
         })
         sock.sendto(msg, DISPATCHER_ADDRESS)
+        logging.info(f"Requested result for task ID: {task_id}")
 
         data, _ = sock.recvfrom(4096)
         _, response = decode_message(data)
+        logging.info(f"Dispatcher returned result: {response}")
         print("→ Ergebnisabfrage:", response)
 
 def main():
@@ -80,6 +93,7 @@ def main():
         - Invalid arguments result in an error message indicating the usage format.
     """
     if len(sys.argv) < 2:
+        logging.error("Invalid arguments provided.")
         print("Verwendung:")
         print("  Neue Aufgabe: python client.py send <type> <payload>")
         print("  Ergebnis abfragen: python client.py result <task_id>")
@@ -93,8 +107,10 @@ def main():
             task_id = int(sys.argv[2])
             request_result(task_id)
         except ValueError:
+            logging.error("Invalid task ID format: not an integer.")
             print("Ungültige Task-ID. Bitte eine Zahl angeben.")
     else:
+        logging.error("Invalid arguments provided.")
         print("Ungültige Argumente.")
 
 if __name__ == "__main__":
