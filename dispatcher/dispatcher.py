@@ -52,8 +52,8 @@ def handle_post_task(data, addr, sock):
         if ":" in worker_address and len(worker_address.split(":")) == 2:
             host, port = worker_address.split(":")
             if host and port.isdigit():
-                send_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                send_sock.sendto(encode_message("TASK", task.__dict__), (host, int(port)))
+                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as send_sock:
+                    send_sock.sendto(encode_message("TASK", task.__dict__), (host, int(port)))
             else:
                 print(f"[Error] Invalid worker address format: {worker_address}")
         else:
