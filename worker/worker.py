@@ -7,7 +7,7 @@ from shared.protocol import (
     REGISTER_WORKER, RESULT_RETURN
 )
 from shared.task import Task
-import json
+from pathlib import Path
 import sys
 
 DISPATCHER_ADDRESS = ("dispatcher", 4000)
@@ -15,6 +15,18 @@ NAMESERVICE_ADDRESS = ("nameservice", 5000)
 
 WORKER_TYPE = sys.argv[1] if len(sys.argv) > 1 else "reverse"
 WORKER_PORT = 6000
+
+RECEIVE_BUFFER_SIZE = 4096
+
+def load_allowed_task_types():
+    types_path = Path(__file__).parent / "worker_types"
+    return {
+        f.stem for f in types_path.glob("*.py")
+        if f.is_file() and f.name != "__init__.py"
+    }
+
+ALLOWED_TASK_TYPES = load_allowed_task_types()
+
 
 def register_with_nameservice():
     """
