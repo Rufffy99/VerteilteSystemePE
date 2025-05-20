@@ -119,7 +119,7 @@ def run_worker():
     print(f"[Worker-{WORKER_TYPE}] Listening on port {WORKER_PORT}")
 
     while True:
-        data, addr = sock.recvfrom(4096)
+        data, addr = sock.recvfrom(RECEIVE_BUFFER_SIZE)
         _, content = decode_message(data)
         threading.Thread(target=process_task, args=(content,)).start()
 
