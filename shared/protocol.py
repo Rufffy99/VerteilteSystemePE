@@ -50,5 +50,7 @@ def decode_message(message_bytes):
         message_str = message_bytes.decode("utf-8")
         message = json.loads(message_str)
         return message.get("type"), message.get("data")
-    except Exception as e:
-        return None, {"error": str(e)}
+    except UnicodeDecodeError as e:
+        return None, {"error": f"Unicode decoding error: {str(e)}"}
+    except json.JSONDecodeError as e:
+        return None, {"error": f"JSON decoding error: {str(e)}"}
