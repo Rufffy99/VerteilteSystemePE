@@ -25,16 +25,16 @@ def send_task(task_type, payload):
     Returns:
         None
     """
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    msg = encode_message(POST_TASK, {
-        "type": task_type,
-        "payload": payload
-    })
-    sock.sendto(msg, DISPATCHER_ADDRESS)
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        msg = encode_message(POST_TASK, {
+            "type": task_type,
+            "payload": payload
+        })
+        sock.sendto(msg, DISPATCHER_ADDRESS)
 
-    data, _ = sock.recvfrom(4096)
-    _, response = decode_message(data)
-    print("→ Aufgabe gesendet:", response)
+        data, _ = sock.recvfrom(4096)
+        _, response = decode_message(data)
+        print("→ Aufgabe gesendet:", response)
 
 
 def request_result(task_id):
@@ -53,15 +53,15 @@ def request_result(task_id):
         This function relies on the global variables GET_RESULT and DISPATCHER_ADDRESS,
         as well as the helper functions encode_message() and decode_message().
     """
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    msg = encode_message(GET_RESULT, {
-        "task_id": task_id
-    })
-    sock.sendto(msg, DISPATCHER_ADDRESS)
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        msg = encode_message(GET_RESULT, {
+            "task_id": task_id
+        })
+        sock.sendto(msg, DISPATCHER_ADDRESS)
 
-    data, _ = sock.recvfrom(4096)
-    _, response = decode_message(data)
-    print("→ Ergebnisabfrage:", response)
+        data, _ = sock.recvfrom(4096)
+        _, response = decode_message(data)
+        print("→ Ergebnisabfrage:", response)
 
 def main():
     """
@@ -89,7 +89,11 @@ def main():
     if command == "send" and len(sys.argv) == 4:
         send_task(sys.argv[2], sys.argv[3])
     elif command == "result" and len(sys.argv) == 3:
-        request_result(int(sys.argv[2]))
+        try:
+            task_id = int(sys.argv[2])
+            request_result(task_id)
+        except ValueError:
+            print("Ungültige Task-ID. Bitte eine Zahl angeben.")
     else:
         print("Ungültige Argumente.")
 
