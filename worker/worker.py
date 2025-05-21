@@ -1,7 +1,7 @@
 import socket
 import threading
 import time
-import importlib
+import importlib.util
 import logging
 import os
 from shared.protocol import (
@@ -11,9 +11,12 @@ from shared.protocol import (
 from shared.task import Task
 from pathlib import Path
 import sys
+import signal
+
+HEARTBEAT = "HEARTBEAT"
 
 DISPATCHER_ADDRESS = ("dispatcher", 4000)
-NAMESERVICE_ADDRESS = ("nameservice", 5000)
+NAMESERVICE_ADDRESS = ("nameservice", 5001)
 
 WORKER_TYPE = sys.argv[1] if len(sys.argv) > 1 else "reverse"
 WORKER_PORT = 6000
@@ -38,6 +41,16 @@ def load_allowed_task_types():
 
 ALLOWED_TASK_TYPES = load_allowed_task_types()
 
+def import_task_handler(task_type):
+    module_path = Path(__file__).parent / "worker_types" / f"{task_type}.py"
+    spec = importlib.util.spec_from_file_location(task_type, module_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+def get_container_address():
+    container_name = os.environ.get("HOSTNAME", socket.gethostname())
+    return f"{container_name}:{WORKER_PORT}"
 
 def register_with_nameservice():
     """
@@ -58,14 +71,82 @@ def register_with_nameservice():
          - NAMESERVICE_ADDRESS
          - encode_message
     """
+    import socket as pysocket
+    hostname = socket.gethostname()
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     msg = encode_message(REGISTER_WORKER, {
         "type": WORKER_TYPE,
-        "address": f"worker:{WORKER_PORT}"
+        "address":f"{get_container_address()}"
     })
     sock.sendto(msg, NAMESERVICE_ADDRESS)
     logging.info(f"Registered with nameservice as type '{WORKER_TYPE}' on port {WORKER_PORT}")
 
+def deregister_with_nameservice():
+    """
+    Deregisters the worker from the nameservice.
+    This function creates a UDP socket, constructs a deregistration message with
+    the worker type and address, and sends it to the nameservice. The operation is
+    logged to provide information about the deregistration event, including the
+    worker type and port.
+    Side Effects:
+        - Sends a UDP message to the nameservice for deregistration.
+        - Logs the deregistration process using the logging system.
+    Exceptions:
+        - May raise socket-related exceptions if there are issues with network communication.
+    """
+    
+    hostname = socket.gethostname()
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    msg = encode_message("DEREGISTER_WORKER", {
+        "type": WORKER_TYPE,
+        "address":f"{get_container_address()}"
+    })
+    sock.sendto(msg, NAMESERVICE_ADDRESS)
+    logging.info(f"Deregistered from nameservice as type '{WORKER_TYPE}' on port {WORKER_PORT}")
+
+def send_heartbeat():
+    """
+    Sends periodic heartbeat messages to the nameservice.
+    This function creates a UDP socket and constructs a heartbeat message containing
+    the worker's type and address. It then enters an infinite loop where it sends the
+    heartbeat message to a predefined nameservice address every 10 seconds. Any errors
+    encountered during the send operation are logged.
+    Note:
+        This function relies on external definitions such as:
+        - encode_message: To encode the heartbeat message.
+        - HEARTBEAT: The message type for heartbeat messages.
+        - WORKER_TYPE: The type of worker sending the message.
+        - WORKER_PORT: The port on which the worker is accessible.
+        - NAMESERVICE_ADDRESS: The address of the nameservice to send the heartbeat to.
+    """
+    
+    hostname = socket.gethostname()
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    msg = encode_message(HEARTBEAT, {
+        "type": WORKER_TYPE,
+        "address":f"{get_container_address()}"
+    })
+    while True:
+        try:
+            sock.sendto(msg, NAMESERVICE_ADDRESS)
+            logging.debug("Heartbeat sent")
+        except Exception as e:
+            logging.error(f"Failed to send heartbeat: {e}")
+        time.sleep(10)
+
+def handle_shutdown(signum, frame):
+    """
+    Handles graceful shutdown upon receiving a termination signal.
+    Args:
+        signum (int): The numeric identifier of the signal.
+        frame (frame object): The current stack frame when the signal was received.
+    The function deregisters the worker from the nameservice, logs a shutdown message,
+    and terminates the process by exiting with a status code of 0.
+    """
+    
+    deregister_with_nameservice()
+    logging.info("Worker shutting down...")
+    sys.exit(0)
 
 def send_result(task_id, result):
     """
@@ -110,7 +191,7 @@ def process_task(task_data):
     try:
         if task.type not in ALLOWED_TASK_TYPES:
             raise ValueError(f"Invalid task type: {task.type}")
-        module = importlib.import_module(f"worker.worker_types.{task.type}")
+        module = import_task_handler(task.type)
         result = module.handle(task.payload)
         task.status = "done"
     except Exception as e:
@@ -143,8 +224,14 @@ def run_worker():
     sock.bind(("0.0.0.0", WORKER_PORT))
     logging.info(f"Listening on port {WORKER_PORT} as type '{WORKER_TYPE}'")
 
+    signal.signal(signal.SIGINT, handle_shutdown)
+    signal.signal(signal.SIGTERM, handle_shutdown)
+
+    threading.Thread(target=send_heartbeat, daemon=True).start()
+
     while True:
         data, addr = sock.recvfrom(RECEIVE_BUFFER_SIZE)
+        logging.info(f"Received task from {addr}")
         _, content = decode_message(data)
         threading.Thread(target=process_task, args=(content,)).start()
 

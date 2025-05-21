@@ -3,10 +3,13 @@ import threading
 import json
 import logging
 import os
-from shared.protocol import decode_message, encode_message, REGISTER_WORKER, LOOKUP_WORKER, DEREGISTER_WORKER
+import time
+from shared.protocol import decode_message, encode_message, REGISTER_WORKER, LOOKUP_WORKER, DEREGISTER_WORKER, HEARTBEAT
 
-PORT = 5000
+PORT = 5001
 HOST = "0.0.0.0"
+
+HEARTBEAT_TIMEOUT = 30  # seconds
 
 registry = {}
 registry_lock = threading.Lock()
@@ -51,31 +54,49 @@ def handle_request(data, addr, sock):
     
     if msg_type == REGISTER_WORKER:
         wtype = content.get("type")
-        address = content.get("address")
+        ip = addr[0]
+        port = 6000  # assuming all workers use this port
+        address = f"{ip}:{port}"
         with registry_lock:
-            registry[wtype] = address
+            registry[wtype] = {"address": address, "last_seen": time.time()}
         response = {"message": f"Registered {wtype} at {address}"}
         logging.info(f"Registered worker '{wtype}' at address {address}")
-    
+
     elif msg_type == LOOKUP_WORKER:
         wtype = content.get("type")
         with registry_lock:
-            address = registry.get(wtype)
-        if address:
-            response = {"address": address}
-            logging.info(f"Lookup for worker type '{wtype}' succeeded: {address}")
-        else:
-            response = {"error": f"No worker found for type '{wtype}'"}
-            logging.warning(f"Lookup for worker type '{wtype}' failed: no entry found")
+            entry = registry.get(wtype)
+            if entry and time.time() - entry["last_seen"] <= HEARTBEAT_TIMEOUT:
+                response = {"address": entry["address"]}
+                logging.info(f"Lookup for worker type '{wtype}' succeeded: {entry['address']}")
+            else:
+                response = {"error": f"No active worker found for type '{wtype}'"}
+                logging.warning(f"Lookup for worker type '{wtype}' failed: no active entry found")
 
     elif msg_type == DEREGISTER_WORKER:
-        address = content.get("address")
-        to_remove = [k for k, v in registry.items() if v == address]
-        for k in to_remove:
-            del registry[k]
+        ip = addr[0]
+        port = 6000
+        address = f"{ip}:{port}"
+        with registry_lock:
+            to_remove = [k for k, v in registry.items() if v["address"] == address]
+            for k in to_remove:
+                del registry[k]
         response = {"message": f"Deregistered {len(to_remove)} entries"}
         logging.info(f"Deregistered {len(to_remove)} entries for address {address}")
-    
+
+    elif msg_type == HEARTBEAT:
+        ip = addr[0]
+        port = 6000
+        address = f"{ip}:{port}"
+        updated = 0
+        with registry_lock:
+            for entry in registry.values():
+                if entry["address"] == address:
+                    entry["last_seen"] = time.time()
+                    updated += 1
+        response = {"message": f"Heartbeat received, updated {updated} entries"}
+        logging.info(f"Heartbeat received from {address}, updated {updated} entries")
+
     else:
         response = {"error": "Unknown message type"}
         logging.warning(f"Received unknown message type: {msg_type}")
