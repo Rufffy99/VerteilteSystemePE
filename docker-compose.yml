@@ -2,36 +2,152 @@ version: '3.9'
 
 services:
   nameservice:
-    build: ./nameservice
+    build: 
+      context: .
+      dockerfile: nameservice/Dockerfile
+    volumes:
+      - logs:/logs
+    environment:
+      - LOG_DIR=/logs
     ports:
-      - "5000:5000"
+      - "5001:5001"
+    networks:
+      - tasknet
 
   dispatcher:
-    build: ./dispatcher
+    build: 
+      context: .
+      dockerfile: dispatcher/Dockerfile
     ports:
       - "4000:4000"
     depends_on:
       - nameservice
+    volumes:
+      - logs:/logs
+    environment:
+      - LOG_DIR=/logs
+    networks:
+      - tasknet
 
   worker-reverse:
-    build: ./worker
-    command: ["python", "worker.py", "reverse"]
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    entrypoint: ["python", "worker.py", "reverse"]
     ports:
       - "6001:6000"
     depends_on:
       - dispatcher
       - nameservice
+    volumes:
+      - logs:/logs
+    environment:
+      - LOG_DIR=/logs
+    networks:
+      - tasknet
+
+  worker-hash:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    entrypoint: ["python", "worker.py", "hash"]
+    ports:
+      - "6002:6000"
+    depends_on:
+      - dispatcher
+      - nameservice
+    volumes:
+      - logs:/logs
+    environment:
+      - LOG_DIR=/logs
+    networks:
+      - tasknet
+
+  worker-sum:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    entrypoint: ["python", "worker.py", "sum"]
+    ports:
+      - "6003:6000"
+    depends_on:
+      - dispatcher
+      - nameservice
+    volumes:
+      - logs:/logs
+    environment:
+      - LOG_DIR=/logs
+    networks:
+      - tasknet
+
+  worker-upper:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    entrypoint: ["python", "worker.py", "upper"]
+    ports:
+      - "6004:6000"
+    depends_on:
+      - dispatcher
+      - nameservice
+    volumes:
+      - logs:/logs
+    environment:
+      - LOG_DIR=/logs
+    networks:
+      - tasknet
+
+  worker-wait:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    entrypoint: ["python", "worker.py", "wait"]
+    ports:
+      - "6005:6000"
+    depends_on:
+      - dispatcher
+      - nameservice
+    volumes:
+      - logs:/logs
+    environment:
+      - LOG_DIR=/logs
+    networks:
+      - tasknet
 
   client:
-    build: ./client
+    build:
+      context: .
+      dockerfile: client/Dockerfile
     stdin_open: true
     tty: true
     depends_on:
       - dispatcher
+      - nameservice
+    volumes:
+      - logs:/logs
+    environment:
+      - LOG_DIR=/logs
+    networks:
+      - tasknet
 
   monitoring:
-    build: ./monitoring
+    build:
+      context: .
+      dockerfile: monitoring/Dockerfile
     ports:
-      - "7000:7000"
+      - "8080:8080"
     depends_on:
       - dispatcher
+      - nameservice
+    volumes:
+      - logs:/logs
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - LOG_DIR=/logs
+    networks:
+      - tasknet
+# Add shared logs volume
+volumes:
+  logs: {}
+networks:
+  tasknet: {}
