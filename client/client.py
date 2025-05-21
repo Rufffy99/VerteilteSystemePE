@@ -3,7 +3,12 @@ import json
 import sys
 import logging
 import os
-from shared.protocol import encode_message, decode_message, POST_TASK, GET_RESULT
+try:
+    from shared.protocol import encode_message, decode_message, POST_TASK, GET_RESULT
+except ModuleNotFoundError as e:
+    print("❌ Fehler beim Import von shared:", e)
+    print("ℹ️  Stelle sicher, dass PYTHONPATH korrekt gesetzt ist und der Ordner shared/ vorhanden ist.")
+    sys.exit(1)
 
 LOG_DIR = os.environ.get("LOG_DIR", ".")
 logging.basicConfig(
@@ -76,6 +81,57 @@ def request_result(task_id):
         logging.info(f"Dispatcher returned result: {response}")
         print("→ Ergebnisabfrage:", response)
 
+import time
+
+def simulate():
+    print("Simuliere mehrere Aufgaben...")
+    tasks = [
+        ("reverse", "Hallo"),
+        ("upper", "welt"),
+        ("sum", "1,2,3"),
+        ("wait", "2"),
+        ("hash", "test123")
+    ]
+    ids = []
+
+    for task_type, payload in tasks:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            msg = encode_message(POST_TASK, {
+                "type": task_type,
+                "payload": payload
+            })
+            sock.sendto(msg, DISPATCHER_ADDRESS)
+            try:
+                data, _ = sock.recvfrom(4096)
+                _, response = decode_message(data)
+                print(f"→ Aufgabe '{task_type}' gesendet:", response)
+                if "message" in response and "ID" in response["message"]:
+                    # Extrahiere Task-ID aus der Nachricht, z.B. "Task angenommen. ID = 42"
+                    try:
+                        task_id = int(response["message"].split("=")[-1].strip())
+                        ids.append(task_id)
+                    except Exception:
+                        pass
+            except Exception as e:
+                print("Fehler beim Senden:", e)
+        time.sleep(1)
+
+    print("\nWarte 5 Sekunden auf Verarbeitung...\n")
+    time.sleep(5)
+
+    for task_id in ids:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            msg = encode_message(GET_RESULT, {
+                "task_id": task_id
+            })
+            sock.sendto(msg, DISPATCHER_ADDRESS)
+            try:
+                data, _ = sock.recvfrom(4096)
+                _, response = decode_message(data)
+                print(f"→ Ergebnis für Task {task_id}:", response)
+            except Exception as e:
+                print("Fehler beim Abfragen:", e)
+
 def main():
     """
     Main entry point of the client application.
@@ -97,6 +153,7 @@ def main():
         print("Verwendung:")
         print("  Neue Aufgabe: python client.py send <type> <payload>")
         print("  Ergebnis abfragen: python client.py result <task_id>")
+        print("  Simulation: python client.py simulate")
         return
 
     command = sys.argv[1]
@@ -109,6 +166,8 @@ def main():
         except ValueError:
             logging.error("Invalid task ID format: not an integer.")
             print("Ungültige Task-ID. Bitte eine Zahl angeben.")
+    elif command == "simulate":
+        simulate()
     else:
         logging.error("Invalid arguments provided.")
         print("Ungültige Argumente.")

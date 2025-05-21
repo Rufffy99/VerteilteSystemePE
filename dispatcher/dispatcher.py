@@ -7,39 +7,31 @@ from shared.task import Task
 import os
 import logging
 
-LOG_DIR = os.getenv("LOG_DIR", ".")
+LOG_DIR = os.environ.get("LOG_DIR", ".")
+LOG_PATH = os.path.join(LOG_DIR, "dispatcher.log")
 os.makedirs(LOG_DIR, exist_ok=True)
 logging.basicConfig(
-    filename=os.path.join(LOG_DIR, "dispatcher.log"),
+    filename=os.path.join(LOG_DIR, LOG_PATH),
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s"
 )
 
 HOST = "0.0.0.0"
 PORT = 4000
-NAMESERVICE_ADDRESS = ("nameservice", 5000)
+NAMESERVICE_ADDRESS = ("nameservice", 5001)
 
 task_queue = []
 task_results = {}
 task_id_counter = 1
 lock = threading.Lock()
 
+worker_indices = {}  # Maintains round-robin index per task type
 
 def lookup_worker(task_type):
     """
-    Lookup the worker address responsible for a given task type.
-    This function creates a UDP socket to send a lookup request to the name service,
-    asking for a worker that can handle the specified task type. The request message is
-    encoded using the constant LOOKUP_WORKER and includes the task type information.
-    The function then awaits a response from the name service for up to 2 seconds. If a response
-    is received, it decodes the message and retrieves the 'address' field; if no response is
-    received within the timeout period, it returns None.
-    Parameters:
-        task_type: The type of task for which a worker lookup is required.
-    Returns:
-        The worker address as returned by the name service, or None if no response was received.
+    Lookup the list of worker addresses responsible for a given task type.
+    Implements round-robin selection if multiple workers are available.
     """
-    
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
         msg = encode_message(LOOKUP_WORKER, {"type": task_type})
         sock.sendto(msg, NAMESERVICE_ADDRESS)
@@ -47,7 +39,10 @@ def lookup_worker(task_type):
         try:
             data, _ = sock.recvfrom(4096)
             _, response = decode_message(data)
-            return response.get("address")
+            address = response.get("address")
+            if not address:
+                return None
+            return address
         except socket.timeout:
             return None
 
@@ -92,19 +87,26 @@ def handle_post_task(data, addr, sock):
 
     # Dispatch immediately for simplicity
     worker_address = lookup_worker(task.type)
+    logging.debug(f"Selected worker address: {worker_address}")
     if worker_address:
         try:
-            host, port = worker_address.split(":")
-            if host and port.isdigit():
+            host, port_str = worker_address.split(":")
+            try:
+                port = int(port_str.strip())
+                resolved_ip = socket.gethostbyname(host)
                 with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as send_sock:
-                    send_sock.sendto(encode_message("TASK", task.to_dict()), (host, int(port)))
-            else:
-                raise ValueError("Invalid address format")
+                    logging.debug(f"Sending to socket address: {(resolved_ip, port)}")
+                    logging.info(f"Sending task {task.id} to resolved IP {resolved_ip}:{port}")
+                    send_sock.sendto(encode_message("TASK", task.__dict__), (resolved_ip, port))
+            except Exception as e:
+                logging.error(f"DNS resolution or dispatch failed for task {task.id} to {worker_address}: {e}")
+                sock.sendto(encode_message("RESPONSE", {"error": f"Dispatch failed: {str(e)}"}), addr)
+                return
+            logging.info(f"Task {task.id} received from {addr}, dispatched to worker {worker_address}")
         except Exception as e:
             logging.error(f"Dispatch failed for task {task.id} to {worker_address}: {str(e)}")
             sock.sendto(encode_message("RESPONSE", {"error": f"Dispatch failed: {str(e)}"}), addr)
             return
-        logging.info(f"Task {task.id} received from {addr}, dispatched to worker {worker_address}")
     else:
         logging.warning(f"No worker available for task type '{task.type}' (task ID {task.id})")
         sock.sendto(encode_message("RESPONSE", {"error": "No worker available for task type"}), addr)
