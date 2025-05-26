@@ -1,8 +1,7 @@
 import logging
 
 
-def PayloadType():
-    return list[float | int]
+PayloadType = list[float | int]
 
 
 def handle(payload: PayloadType) -> float:
