@@ -24,30 +24,44 @@
 ├── worker/             # Dynamically loaded workers by type
 │   └── worker_types/   # Task type handlers (e.g. reverse.py)
 ├── nameservice/        # Worker registry & lookup service
-├── monitoring/         # Basic REST monitoring interface
-├── shared/             # Shared data structures and protocol
-├── docker-compose.yml  # Compose file to launch the system
-└── docs/               # Documentation and test protocols
+├── monitoring/         # REST-based monitoring dashboard
+├── shared/             # Shared protocol & models
+├── devtools/           # CLI tools and compose generator
+├── docs/               # Documentation and test protocols
+├── docker-compose.yml              # Legacy fallback compose file
+├── docker-compose.generated.yml    # Dynamically generated compose file
+├── workers.json                   # Active workers list
+├── start.py                       # Unified CLI entry point
+├── start.man.txt                  # CLI manual
+└── requirements.txt               # Python dependencies
 ```
 
 ---
 
 ## 🚀 Quickstart
 
-Build and start the system
+Run everything with one command:
+
 ```bash
-docker-compose build
-docker-compose up
+python start.py build --reset --no-cache -d
 ```
 
-Submit a task via client
+To view the manual:
+
 ```bash
-docker-compose run client send reverse "Hello World"
+python start.py --man
 ```
 
-Query the result of task ID 1
+You can also regenerate only the compose file:
+
 ```bash
-docker-compose run client result 1
+python start.py regen-compose
+```
+
+Or reset everything:
+
+```bash
+python start.py reset
 ```
 
 ---
@@ -55,15 +69,21 @@ docker-compose run client result 1
 ## 🛠️ Extending Task Types
 
 To add a new task type:
-	1.	Create a new Python file in worker/worker_types/, e.g. foobar.py
-	2.	Implement a handle(payload: str) -> str function
-	3.	That’s it — the system will automatically detect the new type.
 
+1. Create a Python file in `worker/worker_types/`, e.g. `foobar.py`
+2. Implement a `handle(payload: str) -> str` function
+3. Add the worker to `workers.json` in the root:
 
----
+```json
+{
+  "workers": [
+    {
+      "name": "foobar",
+      "active": true,
+      "description": "Does something useful with the input string."
+    }
+  ]
+}
+```
 
-## 📦 Dependencies
-
-	•	Python 3.11
-	•	Docker, Docker Compose
-	•	Flask (for monitoring only)
+Workers from `workers.json` will be auto-launched with `start.py build`.
