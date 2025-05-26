@@ -5,17 +5,11 @@ import logging
 import os
 import time
 from shared.protocol import decode_message, encode_message, REGISTER_WORKER, LOOKUP_WORKER, DEREGISTER_WORKER, HEARTBEAT
-import time
-from shared.protocol import decode_message, encode_message, REGISTER_WORKER, LOOKUP_WORKER, DEREGISTER_WORKER, HEARTBEAT
 
-PORT = 5001
 PORT = 5001
 HOST = "0.0.0.0"
 
 HEARTBEAT_TIMEOUT = 30  # seconds
-
-HEARTBEAT_TIMEOUT = 30  # seconds
-
 registry = {}
 registry_lock = threading.Lock()
 
