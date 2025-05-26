@@ -60,7 +60,6 @@ def generate_compose(workers_file="workers.json", output_file="docker-compose.ge
         }
 
     compose_config = {
-        "version": "3.9",
         "services": services,
         "volumes": {"logs": {}},
         "networks": {"tasknet": {}}

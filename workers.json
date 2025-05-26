@@ -22,7 +22,7 @@
     },
     {
         "name": "wait",
-        "active": false,
+        "active": true,
         "description": "Delays processing for a specified duration."
     }
     ]
