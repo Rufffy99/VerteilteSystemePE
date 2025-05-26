@@ -35,7 +35,6 @@ def load_worker_types():
 app = Flask(__name__)
 
 NAMESERVICE_ADDRESS = ("nameservice", 5001)
-NAMESERVICE_ADDRESS = ("nameservice", 5001)
 DISPATCHER_ADDRESS = ("dispatcher", 4000)
 RECEIVE_BUFFER_SIZE = 4096
 
@@ -333,27 +332,6 @@ def containers():
     logging.info(f"Expected containers: {expected_containers}")
     try:
         client = docker.DockerClient(base_url='unix://var/run/docker.sock')
-        running_containers = client.containers.list()
-        running_names = {c.name: c for c in running_containers}
-        container_data = []
-        for name in expected_containers:
-            if name in running_names:
-                c = running_names[name]
-                container_data.append({
-                    "name": c.name,
-                    "image": c.image.tags[0] if c.image.tags else c.image.short_id,
-                    "status": c.status,
-                    "id": c.short_id,
-                    "running": True
-                })
-            else:
-                container_data.append({
-                    "name": name,
-                    "image": "-",
-                    "status": "not running",
-                    "id": "-",
-                    "running": False
-                })
         running_containers = client.containers.list()
         running_names = {c.name: c for c in running_containers}
         container_data = []
