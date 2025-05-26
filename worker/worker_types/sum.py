@@ -6,21 +6,24 @@ PayloadType = list[float | int]
 
 def handle(payload: PayloadType) -> float:
     """
-    Handles sum operations on a payload containing numbers.
-    This function attempts to compute the sum of numbers from the provided payload. 
-    It first tries to directly apply the built-in sum() function to the payload. 
-    If a TypeError is encountered (for example, when the payload is a comma-separated string 
-    rather than a list of numbers), it logs a warning, splits the payload string by commas, 
-    converts each segment to a float, and then computes the sum. 
-    Any other unexpected exceptions are logged before a ValueError is raised.
+    Calculates and returns the sum of numbers from the given payload.
 
-    Parameters:
-        payload (str): A string representing either an iterable of numbers or a comma-separated list of numbers.
+    The function first attempts to directly sum the payload, assuming it is an iterable of numbers.
+    If a TypeError is encountered (likely because the payload is not directly iterable as numbers),
+    it assumes that the payload is a comma-separated string of numbers, converts each element to a float,
+    and then returns their sum.
+    If any other exception occurs during processing, a ValueError is raised with an appropriate message.
+
+    Args:
+        payload (Iterable[float] or str): An iterable of numeric values or a comma-separated string of numbers.
+
     Returns:
-        float: The sum of the numbers extracted from the payload.
+        float: The sum of the numbers in the payload.
+
     Raises:
-        ValueError: If the payload format is invalid or cannot be processed.
+        ValueError: If the payload format is invalid or if an unexpected error occurs during processing.
     """
+
 
     try:
         payload_sum = sum(payload)
