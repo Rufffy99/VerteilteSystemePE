@@ -10,6 +10,7 @@ PORT = 5001
 HOST = "0.0.0.0"
 
 HEARTBEAT_TIMEOUT = 30  # seconds
+
 registry = {}
 registry_lock = threading.Lock()
 
@@ -72,22 +73,9 @@ def handle_request(data, addr, sock):
             else:
                 response = {"error": f"No active worker found for type '{wtype}'"}
                 logging.warning(f"Lookup for worker type '{wtype}' failed: no active entry found")
-            entry = registry.get(wtype)
-            if entry and time.time() - entry["last_seen"] <= HEARTBEAT_TIMEOUT:
-                response = {"address": entry["address"]}
-                logging.info(f"Lookup for worker type '{wtype}' succeeded: {entry['address']}")
-            else:
-                response = {"error": f"No active worker found for type '{wtype}'"}
-                logging.warning(f"Lookup for worker type '{wtype}' failed: no active entry found")
+
 
     elif msg_type == DEREGISTER_WORKER:
-        ip = addr[0]
-        port = 6000
-        address = f"{ip}:{port}"
-        with registry_lock:
-            to_remove = [k for k, v in registry.items() if v["address"] == address]
-            for k in to_remove:
-                del registry[k]
         ip = addr[0]
         port = 6000
         address = f"{ip}:{port}"
