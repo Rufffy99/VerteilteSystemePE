@@ -5,9 +5,14 @@ import logging
 import os
 import time
 from shared.protocol import decode_message, encode_message, REGISTER_WORKER, LOOKUP_WORKER, DEREGISTER_WORKER, HEARTBEAT
+import time
+from shared.protocol import decode_message, encode_message, REGISTER_WORKER, LOOKUP_WORKER, DEREGISTER_WORKER, HEARTBEAT
 
 PORT = 5001
+PORT = 5001
 HOST = "0.0.0.0"
+
+HEARTBEAT_TIMEOUT = 30  # seconds
 
 HEARTBEAT_TIMEOUT = 30  # seconds
 
@@ -57,10 +62,15 @@ def handle_request(data, addr, sock):
         ip = addr[0]
         port = 6000  # assuming all workers use this port
         address = f"{ip}:{port}"
+        ip = addr[0]
+        port = 6000  # assuming all workers use this port
+        address = f"{ip}:{port}"
         with registry_lock:
+            registry[wtype] = {"address": address, "last_seen": time.time()}
             registry[wtype] = {"address": address, "last_seen": time.time()}
         response = {"message": f"Registered {wtype} at {address}"}
         logging.info(f"Registered worker '{wtype}' at address {address}")
+
 
     elif msg_type == LOOKUP_WORKER:
         wtype = content.get("type")
@@ -72,8 +82,22 @@ def handle_request(data, addr, sock):
             else:
                 response = {"error": f"No active worker found for type '{wtype}'"}
                 logging.warning(f"Lookup for worker type '{wtype}' failed: no active entry found")
+            entry = registry.get(wtype)
+            if entry and time.time() - entry["last_seen"] <= HEARTBEAT_TIMEOUT:
+                response = {"address": entry["address"]}
+                logging.info(f"Lookup for worker type '{wtype}' succeeded: {entry['address']}")
+            else:
+                response = {"error": f"No active worker found for type '{wtype}'"}
+                logging.warning(f"Lookup for worker type '{wtype}' failed: no active entry found")
 
     elif msg_type == DEREGISTER_WORKER:
+        ip = addr[0]
+        port = 6000
+        address = f"{ip}:{port}"
+        with registry_lock:
+            to_remove = [k for k, v in registry.items() if v["address"] == address]
+            for k in to_remove:
+                del registry[k]
         ip = addr[0]
         port = 6000
         address = f"{ip}:{port}"

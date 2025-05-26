@@ -9,12 +9,25 @@ services:
       - logs:/logs
     environment:
       - LOG_DIR=/logs
+    build: 
+      context: .
+      dockerfile: nameservice/Dockerfile
+    volumes:
+      - logs:/logs
+    environment:
+      - LOG_DIR=/logs
     ports:
+      - "5001:5001"
+    networks:
+      - tasknet
       - "5001:5001"
     networks:
       - tasknet
 
   dispatcher:
+    build: 
+      context: .
+      dockerfile: dispatcher/Dockerfile
     build: 
       context: .
       dockerfile: dispatcher/Dockerfile
@@ -49,6 +62,10 @@ services:
 
 
   worker-reverse:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    entrypoint: ["python", "worker.py", "reverse"]
     build:
       context: .
       dockerfile: worker/Dockerfile
@@ -132,8 +149,85 @@ services:
       - LOG_DIR=/logs
     networks:
       - tasknet
+    volumes:
+      - logs:/logs
+    environment:
+      - LOG_DIR=/logs
+    networks:
+      - tasknet
+
+  worker-hash:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    entrypoint: ["python", "worker.py", "hash"]
+    ports:
+      - "6002:6000"
+    depends_on:
+      - dispatcher
+      - nameservice
+    volumes:
+      - logs:/logs
+    environment:
+      - LOG_DIR=/logs
+    networks:
+      - tasknet
+
+  worker-sum:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    entrypoint: ["python", "worker.py", "sum"]
+    ports:
+      - "6003:6000"
+    depends_on:
+      - dispatcher
+      - nameservice
+    volumes:
+      - logs:/logs
+    environment:
+      - LOG_DIR=/logs
+    networks:
+      - tasknet
+
+  worker-upper:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    entrypoint: ["python", "worker.py", "upper"]
+    ports:
+      - "6004:6000"
+    depends_on:
+      - dispatcher
+      - nameservice
+    volumes:
+      - logs:/logs
+    environment:
+      - LOG_DIR=/logs
+    networks:
+      - tasknet
+
+  worker-wait:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    entrypoint: ["python", "worker.py", "wait"]
+    ports:
+      - "6005:6000"
+    depends_on:
+      - dispatcher
+      - nameservice
+    volumes:
+      - logs:/logs
+    environment:
+      - LOG_DIR=/logs
+    networks:
+      - tasknet
 
   client:
+    build:
+      context: .
+      dockerfile: client/Dockerfile
     build:
       context: .
       dockerfile: client/Dockerfile

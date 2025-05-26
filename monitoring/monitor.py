@@ -35,6 +35,7 @@ def load_worker_types():
 app = Flask(__name__)
 
 NAMESERVICE_ADDRESS = ("nameservice", 5001)
+NAMESERVICE_ADDRESS = ("nameservice", 5001)
 DISPATCHER_ADDRESS = ("dispatcher", 4000)
 RECEIVE_BUFFER_SIZE = 4096
 
@@ -55,6 +56,22 @@ TEMPLATE = """
         }
         .tab a.active { color: green; }
         pre { background: #eee; padding: 1em; overflow: auto; }
+        .active-btn {
+            background-color: #cce5ff;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            max-width: 800px;
+        }
+        th, td {
+            border: 1px solid #999;
+            padding: 0.5em 1em;
+            text-align: left;
+        }
+        th {
+            background-color: #ddd;
+        }
         .active-btn {
             background-color: #cce5ff;
         }
@@ -152,12 +169,24 @@ TEMPLATE = """
 
     {% elif tab == 'logs' %}
         <h1>📄 Log Dateien</h1>
+        
         {% for log_file, content in logs.items() %}
             <h3>{{ log_file }}</h3>
             <pre>{{ content }}</pre>
         {% endfor %}
     {% elif tab == 'containers' %}
         <h1>🐳 Laufende Docker-Container</h1>
+        <table>
+            <thead>
+                <tr>
+                    <th>Container</th>
+                    <th>Image</th>
+                    <th>Status</th>
+                    <th>Running</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for container in containers %}
         <table>
             <thead>
                 <tr>
@@ -178,7 +207,16 @@ TEMPLATE = """
                         <td>{{ container.status }}</td>
                         <td style="font-size: 1.2em; text-align: center;">{{ "✅" if container.running else "❌" }}</td>
                     </tr>
+                    <tr>
+                        <td>{{ container.name }}</td>
+                        <td>{{ container.image }}</td>
+                        <td>{{ container.status }}</td>
+                        <td style="font-size: 1.2em; text-align: center;">{{ "✅" if container.running else "❌" }}</td>
+                    </tr>
                 {% endif %}
+            {% endfor %}
+            </tbody>
+        </table>
             {% endfor %}
             </tbody>
         </table>
@@ -272,10 +310,15 @@ def logs():
     log_dir = "/logs"
     logs = {}
     selected_files = request.args.getlist("file")
+    selected_files = request.args.getlist("file")
     if os.path.isdir(log_dir):
         for filename in os.listdir(log_dir):
             path = os.path.join(log_dir, filename)
             if os.path.isfile(path):
+                if not selected_files or filename in selected_files:
+                    with open(path, "r") as f:
+                        logs[filename] = f.read()
+    return render_template_string(TEMPLATE, tab="logs", logs=logs, selected_file=selected_files)
                 if not selected_files or filename in selected_files:
                     with open(path, "r") as f:
                         logs[filename] = f.read()
@@ -294,6 +337,27 @@ def containers():
     logging.info(f"Expected containers: {expected_containers}")
     try:
         client = docker.DockerClient(base_url='unix://var/run/docker.sock')
+        running_containers = client.containers.list()
+        running_names = {c.name: c for c in running_containers}
+        container_data = []
+        for name in expected_containers:
+            if name in running_names:
+                c = running_names[name]
+                container_data.append({
+                    "name": c.name,
+                    "image": c.image.tags[0] if c.image.tags else c.image.short_id,
+                    "status": c.status,
+                    "id": c.short_id,
+                    "running": True
+                })
+            else:
+                container_data.append({
+                    "name": name,
+                    "image": "-",
+                    "status": "not running",
+                    "id": "-",
+                    "running": False
+                })
         running_containers = client.containers.list()
         running_names = {c.name: c for c in running_containers}
         container_data = []

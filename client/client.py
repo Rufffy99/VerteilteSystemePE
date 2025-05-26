@@ -85,6 +85,7 @@ import time
 
 def simulate():
     print("Simuliere mehrere Aufgaben...")
+
     import json
     task_file = os.path.join(os.path.dirname(__file__), "tasks.json")
     if not os.path.isfile(task_file):
@@ -92,6 +93,7 @@ def simulate():
         return
     with open(task_file, "r") as f:
         tasks = json.load(f)
+
     ids = []
 
     for task_type, payload in tasks:
@@ -150,6 +152,7 @@ def main():
     """
     if len(sys.argv) < 2:
         logging.error("Invalid arguments provided.")
+
         print("Usage:")
         print("  New Task: python client.py send <type> <payload>")
         print("  Query Result: python client.py result <task_id>")
