@@ -17,6 +17,17 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s"
 )
 
+WORKERS_JSON_PATH = "/app/workers.json"
+logging.info(f"Looking for workers.json at: {WORKERS_JSON_PATH}")
+def load_worker_types():
+    try:
+        with open(WORKERS_JSON_PATH, "r") as f:
+            data = json.load(f)
+            return [w["name"] for w in data.get("workers", [])]
+    except Exception as e:
+        logging.error(f"Could not load worker types: {e}")
+        return []
+
 app = Flask(__name__)
 
 NAMESERVICE_ADDRESS = ("nameservice", 5001)
@@ -232,17 +243,15 @@ def logs():
 
 @app.route("/containers")
 def containers():
+    worker_types = load_worker_types()
+    logging.info(f"Detected worker types: {worker_types}")
     expected_containers = [
         "programmentwurf-nameservice-1",
         "programmentwurf-dispatcher-1",
         "programmentwurf-monitoring-1",
         "programmentwurf-client-1",
-        "programmentwurf-worker-reverse-1",
-        "programmentwurf-worker-hash-1",
-        "programmentwurf-worker-sum-1",
-        "programmentwurf-worker-upper-1",
-        "programmentwurf-worker-wait-1"
-    ]
+    ] + [f"programmentwurf-worker-{name}-1" for name in worker_types]
+    logging.info(f"Expected containers: {expected_containers}")
     try:
         client = docker.DockerClient(base_url='unix://var/run/docker.sock')
         running_containers = client.containers.list()
