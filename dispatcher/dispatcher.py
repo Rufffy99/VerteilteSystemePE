@@ -9,11 +9,8 @@ import logging
 
 LOG_DIR = os.environ.get("LOG_DIR", ".")
 LOG_PATH = os.path.join(LOG_DIR, "dispatcher.log")
-LOG_DIR = os.environ.get("LOG_DIR", ".")
-LOG_PATH = os.path.join(LOG_DIR, "dispatcher.log")
 os.makedirs(LOG_DIR, exist_ok=True)
 logging.basicConfig(
-    filename=os.path.join(LOG_DIR, LOG_PATH),
     filename=os.path.join(LOG_DIR, LOG_PATH),
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s"
@@ -21,7 +18,6 @@ logging.basicConfig(
 
 HOST = "0.0.0.0"
 PORT = 4000
-NAMESERVICE_ADDRESS = ("nameservice", 5001)
 NAMESERVICE_ADDRESS = ("nameservice", 5001)
 
 task_queue = []
@@ -48,10 +44,6 @@ def lookup_worker(task_type):
         try:
             data, _ = sock.recvfrom(4096)
             _, response = decode_message(data)
-            address = response.get("address")
-            if not address:
-                return None
-            return address
             address = response.get("address")
             if not address:
                 return None

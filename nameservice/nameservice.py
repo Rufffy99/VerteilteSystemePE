@@ -62,11 +62,7 @@ def handle_request(data, addr, sock):
         ip = addr[0]
         port = 6000  # assuming all workers use this port
         address = f"{ip}:{port}"
-        ip = addr[0]
-        port = 6000  # assuming all workers use this port
-        address = f"{ip}:{port}"
         with registry_lock:
-            registry[wtype] = {"address": address, "last_seen": time.time()}
             registry[wtype] = {"address": address, "last_seen": time.time()}
         response = {"message": f"Registered {wtype} at {address}"}
         logging.info(f"Registered worker '{wtype}' at address {address}")
