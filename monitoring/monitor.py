@@ -319,10 +319,6 @@ def logs():
                     with open(path, "r") as f:
                         logs[filename] = f.read()
     return render_template_string(TEMPLATE, tab="logs", logs=logs, selected_file=selected_files)
-                if not selected_files or filename in selected_files:
-                    with open(path, "r") as f:
-                        logs[filename] = f.read()
-    return render_template_string(TEMPLATE, tab="logs", logs=logs, selected_file=selected_files)
 
 @app.route("/containers")
 def containers():
