@@ -62,6 +62,7 @@ def handle_request(data, addr, sock):
         response = {"message": f"Registered {wtype} at {address}"}
         logging.info(f"Registered worker '{wtype}' at address {address}")
 
+
     elif msg_type == LOOKUP_WORKER:
         wtype = content.get("type")
         with registry_lock:
@@ -72,6 +73,7 @@ def handle_request(data, addr, sock):
             else:
                 response = {"error": f"No active worker found for type '{wtype}'"}
                 logging.warning(f"Lookup for worker type '{wtype}' failed: no active entry found")
+
 
     elif msg_type == DEREGISTER_WORKER:
         ip = addr[0]
@@ -96,6 +98,16 @@ def handle_request(data, addr, sock):
                     updated += 1
         response = {"message": f"Heartbeat received, updated {updated} entries"}
         logging.info(f"Heartbeat received from {address}, updated {updated} entries")
+
+    elif msg_type == "LIST_WORKERS":
+        with registry_lock:
+            worker_list = [
+                {"type": wtype, "address": entry["address"]}
+                for wtype, entry in registry.items()
+                if time.time() - entry["last_seen"] <= HEARTBEAT_TIMEOUT
+            ]
+        response = {"workers": worker_list}
+        logging.info(f"LIST_WORKERS responded with {len(worker_list)} active workers")
 
     else:
         response = {"error": "Unknown message type"}

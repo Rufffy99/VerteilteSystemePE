@@ -29,6 +29,40 @@ services:
     networks:
       - tasknet
 
+  monitoring:
+    build:
+      context: .
+      dockerfile: monitoring/Dockerfile
+    ports:
+      - "8080:8080"
+    depends_on:
+      - dispatcher
+      - nameservice
+    volumes:
+      - logs:/logs
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./workers.json:/app/workers.json
+    environment:
+      - LOG_DIR=/logs
+    networks:
+      - tasknet
+
+  client:
+    build:
+      context: .
+      dockerfile: client/Dockerfile
+    stdin_open: true
+    tty: true
+    depends_on:
+      - dispatcher
+      - nameservice
+    volumes:
+      - logs:/logs
+    environment:
+      - LOG_DIR=/logs
+    networks:
+      - tasknet
+
   worker-reverse:
     build:
       context: .
@@ -114,39 +148,7 @@ services:
     networks:
       - tasknet
 
-  client:
-    build:
-      context: .
-      dockerfile: client/Dockerfile
-    stdin_open: true
-    tty: true
-    depends_on:
-      - dispatcher
-      - nameservice
-    volumes:
-      - logs:/logs
-    environment:
-      - LOG_DIR=/logs
-    networks:
-      - tasknet
 
-  monitoring:
-    build:
-      context: .
-      dockerfile: monitoring/Dockerfile
-    ports:
-      - "8080:8080"
-    depends_on:
-      - dispatcher
-      - nameservice
-    volumes:
-      - logs:/logs
-      - /var/run/docker.sock:/var/run/docker.sock
-    environment:
-      - LOG_DIR=/logs
-    networks:
-      - tasknet
-# Add shared logs volume
 volumes:
   logs: {}
 networks:

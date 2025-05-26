@@ -22,3 +22,4 @@ class Task:
     status: str = "pending"
     timestamp_created: float = field(default_factory=lambda: time.time())
     timestamp_completed: float = 0.0
+    assigned_worker: str = None

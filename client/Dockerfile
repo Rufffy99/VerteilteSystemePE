@@ -4,4 +4,4 @@ COPY client/ .
 COPY shared/ shared/
 ENV PYTHONPATH=/app
 RUN pip install --no-cache-dir -r requirements.txt
-CMD ["python", "client.py"]
+CMD ["python", "client.py", "simulate"]

@@ -1,0 +1,54 @@
+NAME
+    start.py - Development environment orchestration tool for Docker-based services.
+
+SYNOPSIS
+    python start.py <command> [options]
+
+DESCRIPTION
+    start.py is a CLI utility that helps developers manage and run a containerized development environment.
+    It handles Docker Compose generation, builds, cleanups, and container orchestration in a controlled way.
+
+COMMANDS
+    build
+        Generate a new docker-compose.generated.yml, build all services, and start the containers.
+
+        Options:
+            --reset       Remove logs, containers, volumes, the compose file, and prune unused images.
+            --no-cache    Build Docker images without using cache.
+            --detach, -d  Run containers in the background.
+
+    run
+        Use an existing docker-compose.generated.yml to start the containers.
+
+        Options:
+            --detach, -d  Run containers in the background.
+
+    regen-compose
+        Regenerate docker-compose.generated.yml without starting or building anything.
+
+    reset
+        Fully reset the environment: stop and remove containers, volumes, logs, and prune Docker images.
+
+    man
+        Print this manual page.
+
+EXAMPLES
+    Full rebuild from scratch:
+        python start.py build --reset --no-cache -d
+
+    Start existing environment:
+        python start.py run
+
+    Regenerate only the compose file:
+        python start.py regen-compose
+
+    Reset everything:
+        python start.py reset
+
+FILES
+    workers.json           Contains the list of worker types to instantiate.
+    requirements.txt       Python dependencies to be installed in the venv.
+    docker-compose.generated.yml  The generated Docker Compose file.
+
+AUTHOR
+    DHBW Ravensburg 

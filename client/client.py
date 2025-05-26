@@ -85,13 +85,15 @@ import time
 
 def simulate():
     print("Simuliere mehrere Aufgaben...")
-    tasks = [
-        ("reverse", "Hallo"),
-        ("upper", "welt"),
-        ("sum", "1,2,3"),
-        ("wait", "2"),
-        ("hash", "test123")
-    ]
+
+    import json
+    task_file = os.path.join(os.path.dirname(__file__), "tasks.json")
+    if not os.path.isfile(task_file):
+        print(f"❌ Aufgaben-Datei '{task_file}' nicht gefunden.")
+        return
+    with open(task_file, "r") as f:
+        tasks = json.load(f)
+
     ids = []
 
     for task_type, payload in tasks:
@@ -150,9 +152,10 @@ def main():
     """
     if len(sys.argv) < 2:
         logging.error("Invalid arguments provided.")
-        print("Verwendung:")
-        print("  Neue Aufgabe: python client.py send <type> <payload>")
-        print("  Ergebnis abfragen: python client.py result <task_id>")
+
+        print("Usage:")
+        print("  New Task: python client.py send <type> <payload>")
+        print("  Query Result: python client.py result <task_id>")
         print("  Simulation: python client.py simulate")
         return
 
@@ -165,12 +168,11 @@ def main():
             request_result(task_id)
         except ValueError:
             logging.error("Invalid task ID format: not an integer.")
-            print("Ungültige Task-ID. Bitte eine Zahl angeben.")
     elif command == "simulate":
         simulate()
     else:
         logging.error("Invalid arguments provided.")
-        print("Ungültige Argumente.")
+        
 
 if __name__ == "__main__":
     main()

@@ -1,8 +1,36 @@
-from flask import Flask, render_template_string, request
+from flask import Flask, render_template_string, request, Response
 import socket
 import time
 from shared.protocol import encode_message, decode_message, LOOKUP_WORKER
 import docker
+import logging
+import os
+import json
+import threading
+
+LOG_DIR = os.environ.get("LOG_DIR", ".")
+LOG_PATH = os.path.join(LOG_DIR, "monitor.log")
+os.makedirs(LOG_DIR, exist_ok=True)
+logging.basicConfig(
+    filename=LOG_PATH,
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s"
+)
+
+WORKERS_JSON_PATH = "/app/workers.json"
+logging.info(f"Looking for workers.json at: {WORKERS_JSON_PATH}")
+def load_worker_config():
+    try:
+        with open(WORKERS_JSON_PATH, "r") as f:
+            data = json.load(f)
+            return data.get("workers", [])
+    except Exception as e:
+        logging.error(f"Could not load worker config: {e}")
+        return []
+
+def load_worker_types():
+    workers = load_worker_config()
+    return [w["name"] for w in workers if w.get("active") is True]
 
 app = Flask(__name__)
 
@@ -10,49 +38,8 @@ NAMESERVICE_ADDRESS = ("nameservice", 5001)
 DISPATCHER_ADDRESS = ("dispatcher", 4000)
 RECEIVE_BUFFER_SIZE = 4096
 
-def query_nameservice(worker_type):
-    try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.settimeout(1)
-        msg = encode_message(LOOKUP_WORKER, {"type": worker_type})
-        sock.sendto(msg, NAMESERVICE_ADDRESS)
-        data, _ = sock.recvfrom(RECEIVE_BUFFER_SIZE)
-        _, content = decode_message(data)
-        return content.get("address", None)
-    except Exception as e:
-        return f"Error: {e}"
-
-def query_dispatcher_tasks():
-    try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.settimeout(1)
-        msg = encode_message("GET_ALL_TASKS", {})
-        sock.sendto(msg, DISPATCHER_ADDRESS)
-        data, _ = sock.recvfrom(RECEIVE_BUFFER_SIZE)
-        _, content = decode_message(data)
-        return content.get("tasks", [])
-    except Exception as e:
-        return f"Error: {e}"
-
-def calculate_stats(tasks):
-    total_time = 0
-    count_done = 0
-    pending = 0
-
-    for task in tasks:
-        if task["status"] == "done":
-            total_time += task["timestamp_completed"] - task["timestamp_created"]
-            count_done += 1
-        elif task["status"] == "pending":
-            pending += 1
-
-    avg_time = total_time / count_done if count_done else 0
-    return {
-        "open_tasks": pending,
-        "avg_completion_time": round(avg_time, 2),
-        "total_tasks": len(tasks),
-        "completed_tasks": count_done
-    }
+latest_stats = {}
+latest_pending_tasks = []
 
 TEMPLATE = """
 <html>
@@ -84,7 +71,52 @@ TEMPLATE = """
         th {
             background-color: #ddd;
         }
+        .active-btn {
+            background-color: #cce5ff;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            max-width: 800px;
+        }
+        th, td {
+            border: 1px solid #999;
+            padding: 0.5em 1em;
+            text-align: left;
+        }
+        th {
+            background-color: #ddd;
+        }
     </style>
+    <script>
+        const evtSource = new EventSource("/events");
+        evtSource.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            const stats = data.stats;
+            const pending = data.pending;
+
+            // Stats HTML
+            let statsHtml = "<ul>";
+            statsHtml += `<li>Total Tasks: ${stats.total_tasks}</li>`;
+            statsHtml += `<li>Completed Tasks: ${stats.completed_tasks}</li>`;
+            statsHtml += `<li>Open Tasks: ${stats.open_tasks}</li>`;
+            statsHtml += `<li>Average Completion Time: ${stats.avg_completion_time} s</li>`;
+            statsHtml += `<li>Average Completion by Worker:<ul>`;
+            for (const [worker, time] of Object.entries(stats.avg_completion_by_worker || {})) {
+                statsHtml += `<li>${worker}: ${time} s</li>`;
+            }
+            statsHtml += "</ul></li></ul>";
+            document.getElementById("live-stats").innerHTML = statsHtml;
+
+            // Queue HTML
+            let queueHtml = "<ul>";
+            for (const task of pending) {
+                queueHtml += `<li>ID ${task.id} | Type: ${task.type} | Payload: ${task.payload}</li>`;
+            }
+            queueHtml += "</ul>";
+            document.getElementById("live-queue").innerHTML = queueHtml;
+        };
+    </script>
 </head>
 <body>
     <div class="tab">
@@ -94,19 +126,46 @@ TEMPLATE = """
     </div>
     {% if tab == 'dashboard' %}
         <h1>📡 Monitoring Dashboard</h1>
-        <h2>🔌 Active Workers</h2>
-        <ul>
-        {% for addr, types in workers %}
-            <li>{{ addr }} → {{ types|join(", ") }}</li>
-        {% endfor %}
-        </ul>
+        <h2>🔌 Workers Übersicht</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Status</th>
+                    <th>Adresse</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for worker in all_workers %}
+                <tr>
+                    <td>{{ worker.name }}</td>
+                    <td style="font-weight: bold; color: {{ 'green' if worker.active else 'red' }}">
+                        {{ 'Aktiv' if worker.active else 'Inaktiv' }}
+                    </td>
+                    <td>
+                        {% if worker.address %}
+                            {{ worker.address }}
+                        {% elif worker.active %}
+                            ❌ Nicht registriert
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
 
-        <h2>📋 Task Stats</h2>
-        <ul>
-        {% for key, value in stats.items() %}
-            <li>{{ key }}: {{ value }}</li>
-        {% endfor %}
-        </ul>
+        <h2>📋 Task Stats (Live)</h2>
+        <div id="live-stats">
+            <ul><li>Loading stats...</li></ul>
+        </div>
+
+        <h2>🕓 Pending Task Queue (Live)</h2>
+        <div id="live-queue">
+            <ul><li>Loading pending tasks...</li></ul>
+        </div>
+
     {% elif tab == 'logs' %}
         <h1>📄 Log Dateien</h1>
         
@@ -127,11 +186,26 @@ TEMPLATE = """
             </thead>
             <tbody>
             {% for container in containers %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Container</th>
+                    <th>Image</th>
+                    <th>Status</th>
+                    <th>Running</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for container in containers %}
                 {% if container.error %}
-                    <tr>
-                        <td colspan="4">Fehler: {{ container.error }}</td>
-                    </tr>
+                    <tr><td colspan="4">Fehler: {{ container.error }}</td></tr>
                 {% else %}
+                    <tr>
+                        <td>{{ container.name }}</td>
+                        <td>{{ container.image }}</td>
+                        <td>{{ container.status }}</td>
+                        <td style="font-size: 1.2em; text-align: center;">{{ "✅" if container.running else "❌" }}</td>
+                    </tr>
                     <tr>
                         <td>{{ container.name }}</td>
                         <td>{{ container.image }}</td>
@@ -142,14 +216,56 @@ TEMPLATE = """
             {% endfor %}
             </tbody>
         </table>
+            {% endfor %}
+            </tbody>
+        </table>
     {% endif %}
 </body>
 </html>
 """
 
+def query_dispatcher_stats():
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.settimeout(1)
+        msg = encode_message("GET_STATS", {})
+        sock.sendto(msg, DISPATCHER_ADDRESS)
+        data, _ = sock.recvfrom(RECEIVE_BUFFER_SIZE)
+        msg_type, content = decode_message(data)
+        if msg_type != "RESPONSE" or not isinstance(content, dict):
+            return [], {}
+        return content.get("pending", []), content.get("stats", {})
+    except Exception as e:
+        return [], {}
+
+def stats_updater():
+    global latest_stats, latest_pending_tasks
+    while True:
+        pending, stats = query_dispatcher_stats()
+        if stats:
+            latest_stats = stats
+            latest_pending_tasks = pending
+        time.sleep(1)
+
+@app.route("/events")
+def sse_stream():
+    def event_stream():
+        last_data = ""
+        while True:
+            combined = {
+                "stats": latest_stats,
+                "pending": latest_pending_tasks
+            }
+            data = json.dumps(combined)
+            if data != last_data:
+                yield f"data: {data}\n\n"
+                last_data = data
+            time.sleep(1)
+    return Response(event_stream(), mimetype="text/event-stream")
+
+
 @app.route("/")
 def dashboard():
-    # Fetch all registered workers from nameservice
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.settimeout(1)
@@ -157,7 +273,7 @@ def dashboard():
         sock.sendto(msg, NAMESERVICE_ADDRESS)
         data, _ = sock.recvfrom(RECEIVE_BUFFER_SIZE)
         _, content = decode_message(data)
-        worker_info = content.get("workers", [])  # Expect list of {"type": str, "address": str}
+        worker_info = content.get("workers", [])
         workers_by_address = {}
         for entry in worker_info:
             addr = entry["address"]
@@ -167,26 +283,32 @@ def dashboard():
     except Exception as e:
         workers_by_address = {"Error": [str(e)]}
 
-    result = query_dispatcher_tasks()
-    if isinstance(result, str):  # an error string
-        stats = {
-            "open_tasks": "Unavailable",
-            "avg_completion_time": "Unavailable",
-            "total_tasks": "Unavailable",
-            "completed_tasks": "Unavailable"
-        }
-    else:
-        stats = calculate_stats(result)
+    worker_config = load_worker_config()
 
-    return render_template_string(TEMPLATE, workers=workers_by_address.items(), stats=stats, tab="dashboard")
+    worker_address_map = {}
+    for addr, types in workers_by_address.items():
+        for t in types:
+            if t not in worker_address_map:
+                worker_address_map[t] = addr
 
+    for w in worker_config:
+        w['address'] = worker_address_map.get(w['name'], None)
 
-import os
+    return render_template_string(
+        TEMPLATE,
+        workers=workers_by_address.items(),
+        stats=latest_stats or {},
+        pending_tasks=latest_pending_tasks or [],
+        tab="dashboard",
+        all_workers=worker_config
+    )
+
 
 @app.route("/logs")
 def logs():
     log_dir = "/logs"
     logs = {}
+    
     selected_files = request.args.getlist("file")
     if os.path.isdir(log_dir):
         for filename in os.listdir(log_dir):
@@ -199,17 +321,15 @@ def logs():
 
 @app.route("/containers")
 def containers():
+    worker_types = load_worker_types()
+    logging.info(f"Detected worker types: {worker_types}")
     expected_containers = [
         "programmentwurf-nameservice-1",
         "programmentwurf-dispatcher-1",
         "programmentwurf-monitoring-1",
         "programmentwurf-client-1",
-        "programmentwurf-worker-reverse-1",
-        "programmentwurf-worker-hash-1",
-        "programmentwurf-worker-sum-1",
-        "programmentwurf-worker-upper-1",
-        "programmentwurf-worker-wait-1"
-    ]
+    ] + [f"programmentwurf-worker-{name}-1" for name in worker_types]
+    logging.info(f"Expected containers: {expected_containers}")
     try:
         client = docker.DockerClient(base_url='unix://var/run/docker.sock')
         running_containers = client.containers.list()
@@ -238,5 +358,7 @@ def containers():
 
     return render_template_string(TEMPLATE, tab="containers", containers=container_data)
 
+
 if __name__ == "__main__":
+    threading.Thread(target=stats_updater, daemon=True).start()
     app.run(host="0.0.0.0", port=8080)
