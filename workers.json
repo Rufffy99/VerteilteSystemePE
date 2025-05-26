@@ -1,19 +1,29 @@
 {
-  "workers": [
+    "workers": [
     {
-      "name": "hash"
+        "name": "hash",
+        "active": true,
+        "description": "Generates a hash of the input string using SHA-256."
     },
     {
-      "name": "reverse"
+        "name": "reverse",
+        "active": true,
+        "description": "Reverses the input string."
     },
     {
-      "name": "sum"
+        "name": "sum",
+        "active": true,
+        "description": "Calculates the sum of all numbers in the input string."
     },
     {
-      "name": "upper"
+        "name": "upper",
+        "active": true,
+        "description": "Converts the input string to uppercase."
     },
     {
-      "name": "wait"
+        "name": "wait",
+        "active": false,
+        "description": "Delays processing for a specified duration."
     }
-  ]
+    ]
 }

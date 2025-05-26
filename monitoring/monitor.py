@@ -19,14 +19,18 @@ logging.basicConfig(
 
 WORKERS_JSON_PATH = "/app/workers.json"
 logging.info(f"Looking for workers.json at: {WORKERS_JSON_PATH}")
-def load_worker_types():
+def load_worker_config():
     try:
         with open(WORKERS_JSON_PATH, "r") as f:
             data = json.load(f)
-            return [w["name"] for w in data.get("workers", [])]
+            return data.get("workers", [])
     except Exception as e:
-        logging.error(f"Could not load worker types: {e}")
+        logging.error(f"Could not load worker config: {e}")
         return []
+
+def load_worker_types():
+    workers = load_worker_config()
+    return [w["name"] for w in workers if w.get("active") is True]
 
 app = Flask(__name__)
 
@@ -106,12 +110,35 @@ TEMPLATE = """
     </div>
     {% if tab == 'dashboard' %}
         <h1>📡 Monitoring Dashboard</h1>
-        <h2>🔌 Active Workers</h2>
-        <ul>
-        {% for addr, types in workers %}
-            <li>{{ addr }} → {{ types|join(", ") }}</li>
-        {% endfor %}
-        </ul>
+        <h2>🔌 Workers Übersicht</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Status</th>
+                    <th>Adresse</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for worker in all_workers %}
+                <tr>
+                    <td>{{ worker.name }}</td>
+                    <td style="font-weight: bold; color: {{ 'green' if worker.active else 'red' }}">
+                        {{ 'Aktiv' if worker.active else 'Inaktiv' }}
+                    </td>
+                    <td>
+                        {% if worker.address %}
+                            {{ worker.address }}
+                        {% elif worker.active %}
+                            ❌ Nicht registriert
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
 
         <h2>📋 Task Stats (Live)</h2>
         <div id="live-stats">
@@ -122,6 +149,7 @@ TEMPLATE = """
         <div id="live-queue">
             <ul><li>Loading pending tasks...</li></ul>
         </div>
+
     {% elif tab == 'logs' %}
         <h1>📄 Log Dateien</h1>
         {% for log_file, content in logs.items() %}
@@ -218,12 +246,24 @@ def dashboard():
     except Exception as e:
         workers_by_address = {"Error": [str(e)]}
 
+    worker_config = load_worker_config()
+
+    worker_address_map = {}
+    for addr, types in workers_by_address.items():
+        for t in types:
+            if t not in worker_address_map:
+                worker_address_map[t] = addr
+
+    for w in worker_config:
+        w['address'] = worker_address_map.get(w['name'], None)
+
     return render_template_string(
         TEMPLATE,
         workers=workers_by_address.items(),
         stats=latest_stats or {},
         pending_tasks=latest_pending_tasks or [],
-        tab="dashboard"
+        tab="dashboard",
+        all_workers=worker_config
     )
 
 

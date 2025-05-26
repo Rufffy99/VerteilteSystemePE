@@ -5,7 +5,8 @@ def generate_compose(workers_file="workers.json", output_file="docker-compose.ge
     with open(workers_file) as f:
         worker_config = json.load(f)
 
-    worker_types = [w["name"] for w in worker_config.get("workers", [])]
+    # Only include active workers
+    active_workers = [w["name"] for w in worker_config.get("workers", []) if w.get("active") is True]
     BASE_PORT = 6001
 
     services = {
@@ -47,7 +48,7 @@ def generate_compose(workers_file="workers.json", output_file="docker-compose.ge
         }
     }
 
-    for i, name in enumerate(worker_types):
+    for i, name in enumerate(active_workers):
         services[f"worker-{name}"] = {
             "build": {"context": ".", "dockerfile": "worker/Dockerfile"},
             "entrypoint": ["python", "worker.py", name],
