@@ -146,7 +146,7 @@ services:
       - LOG_DIR=/logs
     networks:
       - tasknet
-# Add shared logs volume
+
 volumes:
   logs: {}
 networks:

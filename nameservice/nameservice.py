@@ -97,6 +97,16 @@ def handle_request(data, addr, sock):
         response = {"message": f"Heartbeat received, updated {updated} entries"}
         logging.info(f"Heartbeat received from {address}, updated {updated} entries")
 
+    elif msg_type == "LIST_WORKERS":
+        with registry_lock:
+            worker_list = [
+                {"type": wtype, "address": entry["address"]}
+                for wtype, entry in registry.items()
+                if time.time() - entry["last_seen"] <= HEARTBEAT_TIMEOUT
+            ]
+        response = {"workers": worker_list}
+        logging.info(f"LIST_WORKERS responded with {len(worker_list)} active workers")
+
     else:
         response = {"error": "Unknown message type"}
         logging.warning(f"Received unknown message type: {msg_type}")

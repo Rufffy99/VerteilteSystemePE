@@ -1,6 +1,6 @@
+import logging
 
-
-def handle(payload):
+def handle(payload: str) -> str:
     """
     Convert the given payload to uppercase.
     Args:
@@ -12,5 +12,6 @@ def handle(payload):
     """
     
     if not isinstance(payload, str):
+        logging.error(f"Invalid payload: {payload}. Expected a string.")
         raise ValueError("Payload must be a string")
     return payload.upper()
