@@ -227,9 +227,6 @@ services:
     build:
       context: .
       dockerfile: client/Dockerfile
-    build:
-      context: .
-      dockerfile: client/Dockerfile
     stdin_open: true
     tty: true
     depends_on:
