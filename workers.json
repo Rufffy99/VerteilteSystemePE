@@ -1,0 +1,19 @@
+{
+  "workers": [
+    {
+      "name": "hash"
+    },
+    {
+      "name": "reverse"
+    },
+    {
+      "name": "sum"
+    },
+    {
+      "name": "upper"
+    },
+    {
+      "name": "wait"
+    }
+  ]
+}

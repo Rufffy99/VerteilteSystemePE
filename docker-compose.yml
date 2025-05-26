@@ -41,6 +41,7 @@ services:
     volumes:
       - logs:/logs
       - /var/run/docker.sock:/var/run/docker.sock
+      - ./workers.json:/app/workers.json
     environment:
       - LOG_DIR=/logs
     networks:
