@@ -309,7 +309,7 @@ def dashboard():
 def logs():
     log_dir = "/logs"
     logs = {}
-    selected_files = request.args.getlist("file")
+    
     selected_files = request.args.getlist("file")
     if os.path.isdir(log_dir):
         for filename in os.listdir(log_dir):
