@@ -11,10 +11,12 @@ except ModuleNotFoundError as e:
     sys.exit(1)
 
 LOG_DIR = os.environ.get("LOG_DIR", ".")
+LOG_PATH = os.path.join(LOG_DIR, "client.log")
+os.makedirs(LOG_DIR, exist_ok=True)
 logging.basicConfig(
-    filename=os.path.join(LOG_DIR, "client.log"),
+    filename=LOG_PATH,
     level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
+    format="%(asctime)s [%(levelname)s] %(message)s"
 )
 
 DISPATCHER_ADDRESS = ("dispatcher", 4000)
@@ -85,7 +87,7 @@ import time
 
 def simulate():
     print("Simuliere mehrere Aufgaben...")
-
+    logging.info("Simulating multiple tasks...")
     import json
     task_file = os.path.join(os.path.dirname(__file__), "tasks.json")
     if not os.path.isfile(task_file):
@@ -107,6 +109,7 @@ def simulate():
                 data, _ = sock.recvfrom(4096)
                 _, response = decode_message(data)
                 print(f"→ Aufgabe '{task_type}' gesendet:", response)
+                logging.info(f"[SIMULATION] Task '{task_type}' sent with payload: {payload}")
                 if "message" in response and "ID" in response["message"]:
                     # Extrahiere Task-ID aus der Nachricht, z.B. "Task angenommen. ID = 42"
                     try:
@@ -150,6 +153,7 @@ def main():
         - For the "result" command, it expects exactly one additional argument (the numeric task ID).
         - Invalid arguments result in an error message indicating the usage format.
     """
+    logging.info("Client started!")
     if len(sys.argv) < 2:
         logging.error("Invalid arguments provided.")
 
