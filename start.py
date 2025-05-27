@@ -17,8 +17,23 @@ def get_venv_python():
 
 def install_requirements(python_path):
     print("📦 Installiere Abhängigkeiten aus requirements.txt ...")
-    subprocess.run([python_path, "-m", "pip", "install", "--upgrade", "pip"], check=True)
-    subprocess.run([python_path, "-m", "pip", "install", "-r", REQUIREMENTS_FILE], check=True)
+    
+    subprocess.run([
+        python_path, "-m", "pip", "install", "--upgrade", "pip",
+        "--trusted-host", "pypi.org",
+        "--trusted-host", "files.pythonhosted.org",
+        "--disable-pip-version-check",
+        "--no-cache-dir"
+    ], check=True)
+
+    subprocess.run([
+        python_path, "-m", "pip", "install", "-r", REQUIREMENTS_FILE,
+        "--trusted-host", "pypi.org",
+        "--trusted-host", "files.pythonhosted.org",
+        "--disable-pip-version-check",
+        "--no-cache-dir"
+    ], check=True)
+
 
 def main():
     if "--man" in sys.argv:
