@@ -174,52 +174,32 @@ TEMPLATE = """
             <pre>{{ content }}</pre>
         {% endfor %}
     {% elif tab == 'containers' %}
-        <h1>🐳 Laufende Docker-Container</h1>
-        <table>
-            <thead>
+    <h1>🐳 Laufende Docker-Container</h1>
+    <table>
+        <thead>
+            <tr>
+                <th>Container</th>
+                <th>Image</th>
+                <th>Status</th>
+                <th>Running</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for container in containers %}
+            {% if container.error %}
+                <tr><td colspan="4">Fehler: {{ container.error }}</td></tr>
+            {% else %}
                 <tr>
-                    <th>Container</th>
-                    <th>Image</th>
-                    <th>Status</th>
-                    <th>Running</th>
+                    <td>{{ container.name }}</td>
+                    <td>{{ container.image }}</td>
+                    <td>{{ container.status }}</td>
+                    <td style="font-size: 1.2em; text-align: center;">{{ "✅" if container.running else "❌" }}</td>
                 </tr>
-            </thead>
-            <tbody>
-            {% for container in containers %}
-        <table>
-            <thead>
-                <tr>
-                    <th>Container</th>
-                    <th>Image</th>
-                    <th>Status</th>
-                    <th>Running</th>
-                </tr>
-            </thead>
-            <tbody>
-            {% for container in containers %}
-                {% if container.error %}
-                    <tr><td colspan="4">Fehler: {{ container.error }}</td></tr>
-                {% else %}
-                    <tr>
-                        <td>{{ container.name }}</td>
-                        <td>{{ container.image }}</td>
-                        <td>{{ container.status }}</td>
-                        <td style="font-size: 1.2em; text-align: center;">{{ "✅" if container.running else "❌" }}</td>
-                    </tr>
-                    <tr>
-                        <td>{{ container.name }}</td>
-                        <td>{{ container.image }}</td>
-                        <td>{{ container.status }}</td>
-                        <td style="font-size: 1.2em; text-align: center;">{{ "✅" if container.running else "❌" }}</td>
-                    </tr>
-                {% endif %}
-            {% endfor %}
-            </tbody>
-        </table>
-            {% endfor %}
-            </tbody>
-        </table>
-    {% endif %}
+            {% endif %}
+        {% endfor %}
+        </tbody>
+    </table>
+{% endif %}
 </body>
 </html>
 """
@@ -323,37 +303,38 @@ def logs():
 def containers():
     worker_types = load_worker_types()
     logging.info(f"Detected worker types: {worker_types}")
-    expected_containers = [
-        "programmentwurf-nameservice-1",
-        "programmentwurf-dispatcher-1",
-        "programmentwurf-monitoring-1",
-        "programmentwurf-client-1",
-    ] + [f"programmentwurf-worker-{name}-1" for name in worker_types]
-    logging.info(f"Expected containers: {expected_containers}")
+    expected_services = ["nameservice", "dispatcher", "monitoring", "client"] + [f"worker-{name}" for name in worker_types]
+    logging.info(f"Expected Compose services: {expected_services}")
+
+    docker_base_url = "unix:///var/run/docker.sock"
+
+    container_data = []
     try:
-        client = docker.DockerClient(base_url='unix://var/run/docker.sock')
-        running_containers = client.containers.list()
-        running_names = {c.name: c for c in running_containers}
-        container_data = []
-        for name in expected_containers:
-            if name in running_names:
-                c = running_names[name]
-                container_data.append({
-                    "name": c.name,
-                    "image": c.image.tags[0] if c.image.tags else c.image.short_id,
-                    "status": c.status,
-                    "id": c.short_id,
-                    "running": True
-                })
+        client = docker.DockerClient(base_url=docker_base_url)
+        containers = client.containers.list(all=True)
+
+        for service in expected_services:
+            matched = [c for c in containers if c.labels.get("com.docker.compose.service") == service]
+            if matched:
+                for c in matched:
+                    container_data.append({
+                        "name": c.name,
+                        "image": c.image.tags[0] if c.image.tags else c.image.short_id,
+                        "status": c.status,
+                        "id": c.short_id,
+                        "running": c.status == "running"
+                    })
             else:
                 container_data.append({
-                    "name": name,
+                    "name": service,
                     "image": "-",
                     "status": "not running",
                     "id": "-",
                     "running": False
                 })
+
     except Exception as e:
+        logging.error(f"Error accessing Docker: {e}")
         container_data = [{"error": str(e)}]
 
     return render_template_string(TEMPLATE, tab="containers", containers=container_data)
