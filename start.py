@@ -9,14 +9,14 @@ REQUIREMENTS_FILE = "requirements.txt"
 
 def create_virtualenv():
     if not os.path.isdir(VENV_DIR):
-        print(f"🐍 Erstelle virtuelles Environment in '{VENV_DIR}' ...")
+        print(f"Erstelle virtuelles Environment in '{VENV_DIR}' ...")
         subprocess.run([sys.executable, "-m", "venv", VENV_DIR], check=True)
 
 def get_venv_python():
     return os.path.join(VENV_DIR, "Scripts" if platform.system() == "Windows" else "bin", "python")
 
 def install_requirements(python_path):
-    print("📦 Installiere Abhängigkeiten aus requirements.txt ...")
+    print("Installiere Abhängigkeiten aus requirements.txt ...")
     
     subprocess.run([
         python_path, "-m", "pip", "install", "--upgrade", "pip",

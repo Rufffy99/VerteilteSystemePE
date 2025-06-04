@@ -50,7 +50,7 @@ def main():
             task_ids.append(task_id)
 
     # Schritt 2: Kurz warten, damit Tasks bearbeitet werden
-    print("\n⏳ Warte auf Ergebnisse...")
+    print("\nWarte auf Ergebnisse...")
     time.sleep(5)
 
     # Schritt 3: Ergebnisse abrufen

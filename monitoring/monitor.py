@@ -20,6 +20,15 @@ logging.basicConfig(
 WORKERS_JSON_PATH = "/app/workers.json"
 logging.info(f"Looking for workers.json at: {WORKERS_JSON_PATH}")
 def load_worker_config():
+    """
+    Load worker configuration from a JSON file.
+    This function attempts to read and load worker configurations from a JSON file defined by the global variable WORKERS_JSON_PATH.
+    It expects the JSON to contain a "workers" key whose value is a list of worker configurations.
+    If the file is read and parsed successfully, the function returns the list associated with the "workers" key.
+    In case of any errors during file reading or JSON parsing, it logs an error message and returns an empty list.
+    Returns:
+        list: A list of worker configurations if successfully loaded, otherwise an empty list.
+    """
     try:
         with open(WORKERS_JSON_PATH, "r") as f:
             data = json.load(f)
@@ -205,6 +214,18 @@ TEMPLATE = """
 """
 
 def query_dispatcher_stats():
+    """
+    Sends a UDP request to the dispatcher to retrieve statistics and a list of pending items.
+    This function creates a UDP socket, sets a timeout, and encodes a "GET_STATS" request. It then sends
+    this message to the dispatcher defined by DISPATCHER_ADDRESS. The function waits for a reply and
+    attempts to decode it. If the received message is of type "RESPONSE" and its content is a dictionary,
+    it extracts and returns the "pending" list and "stats" dictionary from the content. In case of any error,
+    a timeout, or if the message format does not match the expected structure, it returns an empty list and dictionary.
+    Returns:
+        tuple: A tuple where the first element is a list of pending items (or an empty list) and the second element
+               is a dictionary containing statistics (or an empty dictionary).
+    """
+    
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.settimeout(1)
@@ -219,6 +240,14 @@ def query_dispatcher_stats():
         return [], {}
 
 def stats_updater():
+    """
+    Continuously updates global state with dispatcher statistics.
+    In an infinite loop, this function queries dispatcher statistics using the
+    query_dispatcher_stats() function. If valid statistics are returned, it updates
+    the global variables 'latest_stats' and 'latest_pending_tasks' accordingly.
+    The loop pauses for one second between successive queries to throttle the
+    update frequency.
+    """
     global latest_stats, latest_pending_tasks
     while True:
         pending, stats = query_dispatcher_stats()
@@ -229,6 +258,18 @@ def stats_updater():
 
 @app.route("/events")
 def sse_stream():
+    """
+    Provides a Server-Sent Events (SSE) stream for real-time updates.
+    This function constructs an inner generator function, event_stream, which continuously monitors
+    the global variables 'latest_stats' and 'latest_pending_tasks'. It serializes these values into JSON
+    and, if the new state differs from the previous one, yields a properly formatted SSE message. The
+    function then returns a Flask Response object configured with the "text/event-stream" mimetype to
+    enable streaming of events to connected clients.
+    Returns:
+        Response: A Flask Response object streaming real-time JSON updates following the SSE protocol.
+    Note:
+        The function assumes that 'latest_stats' and 'latest_pending_tasks' are defined in the outer scope.
+    """
     def event_stream():
         last_data = ""
         while True:
@@ -286,6 +327,23 @@ def dashboard():
 
 @app.route("/logs")
 def logs():
+    """
+    Retrieve log files from the "/logs" directory and render them using a template.
+    This function checks if the "/logs" directory exists and iterates through its
+    contents to find files. If specific filenames are provided via the "file" query 
+    parameter (obtained from request.args), only those files are processed; otherwise,
+    all files in the directory are used. For each valid file, the function reads its
+    content and stores it in a dictionary keyed by the filename.
+    Returns:
+        A rendered template string that includes:
+            - "tab": a string indicating the current tab (set to "logs"),
+            - "logs": a dictionary mapping each filename to its corresponding content,
+            - "selected_file": the list of filenames that were specified in the query parameters.
+    Notes:
+        - This function assumes that the environment provides access to the `request`
+          object (e.g., from Flask) and that `render_template_string` and a TEMPLATE are defined.
+        - File system operations are performed using modules like `os`, which should be imported.
+    """
     log_dir = "/logs"
     logs = {}
     
@@ -301,6 +359,26 @@ def logs():
 
 @app.route("/containers")
 def containers():
+    """
+    Retrieves information about Docker containers and renders an HTML template with the container status.
+    This function performs the following steps:
+    1. Loads available worker types by invoking `load_worker_types()`.
+    2. Constructs a list of expected Docker Compose service names, which includes fixed services
+        (e.g., "nameservice", "dispatcher", "monitoring", "client") as well as dynamically generated
+        worker services in the form "worker-<worker_type>".
+    3. Establishes a connection to the Docker daemon using the Unix socket at "/var/run/docker.sock".
+    4. Retrieves all Docker containers (both running and stopped) and filters them based on the
+        Docker Compose service label ("com.docker.compose.service") to match the expected services.
+    5. For each expected service:
+        - If corresponding containers are found, appends their details (name, image tag or short ID,
+          status, container ID, and a boolean flag indicating if it is running) to a list.
+        - If no matching container exists, appends a default entry indicating that the service is not running.
+    6. Catches and logs any exceptions during Docker access, returning an error entry if needed.
+    7. Finally, returns an HTML string rendered with a provided Jinja2 template (`TEMPLATE`), passing
+        the container information and setting the active tab to "containers".
+    Returns:
+         str: An HTML string generated by rendering the `TEMPLATE` with the container data.
+    """
     worker_types = load_worker_types()
     logging.info(f"Detected worker types: {worker_types}")
     expected_services = ["nameservice", "dispatcher", "monitoring", "client"] + [f"worker-{name}" for name in worker_types]

@@ -37,6 +37,18 @@ live_stats = {
 }
 
 def lookup_worker(task_type):
+    """
+    Lookup a worker's address based on the given task type.
+    This function creates a UDP socket to send a lookup request message containing the task type
+    to the name service (address specified by NAMESERVICE_ADDRESS). It then waits for a response with 
+    a timeout of 2 seconds. If a valid response is received and contains a worker address, that address
+    is returned. Otherwise, or if the socket times out, the function returns None.
+    Parameters:
+        task_type: The type of task for which a worker's address is being requested.
+    Returns:
+        The address of the worker as received from the lookup, or None if no valid address is found or
+        if the request times out.
+    """
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
         msg = encode_message(LOOKUP_WORKER, {"type": task_type})
         sock.sendto(msg, NAMESERVICE_ADDRESS)
@@ -52,6 +64,23 @@ def lookup_worker(task_type):
             return None
 
 def try_dispatch_tasks():
+    """
+    Tries to dispatch tasks from the global task_queue to available workers.
+    This function iterates over a copy of the global task_queue while holding a lock
+    to ensure thread-safe access. For each task in the queue, it performs the following:
+    - If the task's status is "done", the task is removed from the queue.
+    - It looks up an available worker corresponding to the task's type.
+    - If no worker is found or the selected worker is marked as busy, the task is skipped.
+    - Otherwise, the worker's address is parsed and resolved into an IP address.
+    - A UDP socket is created to send the task, encoded as a message, to the worker.
+    - After successful dispatch, the worker is marked as busy, and the task is removed from the queue.
+    - Any exceptions encountered during dispatch are logged as errors.
+    Notes:
+    - Global resources such as task_queue, lock, and worker_busy are used for coordination.
+    - The task is dispatched using a UDP protocol and expects the worker to process the message.
+    - The function handles and logs exceptions to ensure that failures during dispatching
+        do not halt the process.
+    """
     logging.debug("Trying to dispatch tasks")
     with lock:
         for task in list(task_queue):
@@ -75,6 +104,25 @@ def try_dispatch_tasks():
                 logging.error(f"Failed to dispatch task {task.id}: {e}")
 
 def handle_post_task(data, addr, sock):
+    """
+    Handles a POST task request by creating a new task from the provided data,
+    updating global task counters and statistics, appending the task to the task queue,
+    and dispatching tasks. Finally, it sends a response back to the requester.
+    Parameters:
+        data (dict): A dictionary containing task data. Expected keys include:
+                     - "type": The type of the task.
+                     - "payload": The payload or content associated with the task.
+        addr (tuple): The address (IP, port) of the client sending the request.
+        sock (socket.socket): The UDP socket used for sending the response message.
+    Side Effects:
+        - Increments the global task_id_counter.
+        - Updates live_stats by incrementing "open_tasks" and "total_tasks".
+        - Creates and enqueues a new Task object in task_queue.
+        - Stores the task in task_results for future reference.
+        - Initiates task dispatching via try_dispatch_tasks().
+    Exceptions:
+        - Logs an error message if there's any failure in sending the response back to the client.
+    """
     global task_id_counter
     with lock:
         task_id = task_id_counter
@@ -106,6 +154,22 @@ def handle_post_task(data, addr, sock):
         logging.error(f"Failed to send response for task {task.id} to {addr}: {e}")
 
 def handle_get_result(data, addr, sock):
+    """
+    Handles a GET result request by retrieving the task's result based on a given task ID and sending an appropriate response.
+    Parameters:
+        data (dict): A dictionary containing the request data. It must include a "task_id" key.
+        addr (tuple): The address (host, port) of the request sender.
+        sock (socket.socket): The socket used to send the response.
+    Behavior:
+        - Retrieves the task associated with the "task_id" from a shared dictionary (access protected by a lock).
+        - If the task is found and its result is available, constructs a response containing the result.
+        - If the task is found but its result is not yet ready, constructs a response indicating that the result is not ready.
+        - If the task is not found, constructs a response indicating that the task was not found.
+        - Logs the request and the constructed response.
+        - Encodes and sends the response message to the requester via the provided socket.
+    Returns:
+        None
+    """
     task_id = data.get("task_id")
     with lock:
         task = task_results.get(task_id)
@@ -120,6 +184,33 @@ def handle_get_result(data, addr, sock):
     sock.sendto(encode_message("RESPONSE", response), addr)
 
 def handle_result_return(data, addr, sock):
+    """
+    Process the result of a task returned from a worker.
+    This function retrieves and updates the task corresponding to the provided
+    result data. It adjusts task details such as its result, timestamps, and status,
+    and updates global statistics including completion counts and average completion
+    times. Additionally, it removes the task from the pending queue if necessary,
+    sends a response back to the worker via the provided socket, and updates the worker's
+    availability before attempting to dispatch new tasks.
+    Args:
+        data (dict): Dictionary containing task information with expected keys:
+            - "task_id": Unique identifier for the task.
+            - "result": The result produced by the worker.
+        addr (tuple): The address (IP, port) of the worker that submitted the result.
+        sock (socket.socket): The UDP socket used to send the response message back.
+    Side Effects:
+        - Updates the global task_results, task_queue, live_stats, and worker_busy
+          data structures.
+        - Computes overall and per-worker average task completion times.
+        - Logs the receipt of the task result.
+        - Responds to the worker using the sock by sending an encoded message.
+        - Triggers task dispatching through a call to try_dispatch_tasks().
+    Notes:
+        This function assumes the existence of several global variables and helper
+        functions (lock, task_results, task_queue, live_stats, worker_busy, encode_message,
+        try_dispatch_tasks) that manage shared state and messaging within the application.
+    """
+    
     task_id = data.get("task_id")
     result = data.get("result")
     with lock:
@@ -167,6 +258,30 @@ def handle_result_return(data, addr, sock):
     try_dispatch_tasks()
 
 def handle_get_all_tasks(data, addr, sock):
+    """
+    Handles a GET_ALL_TASKS request by retrieving and processing task data, then sending back
+    the serialized task list along with associated statistics.
+    Parameters:
+        data: The request payload (not used in processing within this function).
+        addr (tuple): The address of the client that sent the request.
+        sock (socket.socket): The socket used to send the response.
+    Behavior:
+        - Logs the receipt of the GET_ALL_TASKS request.
+        - Acquires a lock to safely access and iterate over the shared task_results data.
+        - Serializes each task object into a dictionary.
+        - Computes statistics including:
+              total: The total number of tasks.
+              done: The number of tasks with the status "done".
+              pending: The number of tasks with the status "pending".
+              avg_completion_time: The average time between 'timestamp_created' and 
+                                   'timestamp_completed' for tasks that are done.
+        - Encodes the response using encode_message with a "RESPONSE" type and includes both the
+          computed statistics and the list of serialized tasks.
+        - Sends the response to the asking client using sock.sendto.
+    Returns:
+        None. The function sends the response directly through the provided socket.
+    """
+    
     logging.info(f"Handling GET_ALL_TASKS request from {addr}")
     with lock:
         tasks_serialized = [t.__dict__ for t in task_results.values()]
@@ -192,6 +307,22 @@ def handle_get_all_tasks(data, addr, sock):
     sock.sendto(encode_message("RESPONSE", {"stats": stats, "tasks": tasks_serialized}), addr)
 
 def handle_get_stats(data, addr, sock):
+    """
+    Handle a GET_STATS request by gathering and sending the current statistics and a list of pending tasks.
+    This function logs the reception of a GET_STATS request, extracts up to 10 pending tasks (represented by their
+    dictionary representations) from the shared task_results collection, and makes a copy of the live_stats dictionary.
+    It then sends these details back to the client via the specified socket.
+    Parameters:
+        data (any): The request payload. Its structure is not explicitly defined in this context.
+        addr (tuple): A tuple containing the client's address information (IP and port), used as the destination for the response.
+        sock (socket.socket): The socket object through which the response message will be sent.
+    Side Effects:
+        - Logs information regarding incoming GET_STATS requests.
+        - Acquires a lock while accessing shared mutable state to ensure thread-safety.
+        - Sends a response message with the current statistics and pending task details to the client.
+    Returns:
+        None
+    """
     logging.info(f"Handling GET_STATS request from {addr}")
     with lock:
         pending = [
@@ -204,6 +335,25 @@ def handle_get_stats(data, addr, sock):
     sock.sendto(encode_message("RESPONSE", {"stats": stats_copy, "pending": pending}), addr)
 
 def dispatcher_loop():
+    """
+    Starts the dispatcher loop, which listens for and processes incoming messages via a UDP socket.
+    This function performs the following tasks:
+        - Creates a UDP socket and binds it to the specified HOST and PORT.
+        - Logs the start-up of the dispatcher with its listening address.
+        - Enters an infinite loop to continuously receive UDP messages.
+        - Decodes each message to determine its type and extract its content.
+        - Logs details about the received message and the sender's address.
+        - Depending on the message type, dispatches the appropriate handler in a new thread:
+            • POST_TASK: For processing task submission requests.
+            • GET_RESULT: For handling requests to fetch the result of a task.
+            • RESULT_RETURN: For processing messages that return task results.
+            • GET_ALL_TASKS: For returning a list of all tasks.
+            • GET_STATS: For providing dispatcher statistics.
+        - For any unrecognized message type, logs a warning and sends an error response back to the sender.
+    Note:
+        - This function runs indefinitely and is expected to be terminated externally.
+        - The use of threading enables concurrent processing of incoming messages.
+    """
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind((HOST, PORT))
     print(f"[Dispatcher] Listening on {HOST}:{PORT}")

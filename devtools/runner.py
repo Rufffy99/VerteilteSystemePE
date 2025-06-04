@@ -8,12 +8,12 @@ def delete_compose_file():
         os.remove(COMPOSE_FILE)
 
 def full_reset():
-    print("🧨 Vollständiger Reset ...")
+    print("Vollständiger Reset ...")
     subprocess.run(["docker-compose", "-f", COMPOSE_FILE, "down", "-v"], check=False)
     delete_compose_file()
     if os.path.exists("logs"):
         shutil.rmtree("logs", ignore_errors=True)
-        print("🧹 Logs gelöscht")
+        print("Logs gelöscht")
     subprocess.run(["docker", "image", "prune", "-f"], check=False)
 
 def run_compose(detach=False, rebuild=False, no_cache=False):
@@ -31,7 +31,7 @@ def run_compose(detach=False, rebuild=False, no_cache=False):
 def main():
     args = sys.argv[1:]
     if not args:
-        print("❌ Kein Befehl angegeben (z. B. build, run, regen-compose)")
+        print("Kein Befehl angegeben (z. B. build, run, regen-compose)")
         sys.exit(1)
 
     cmd = args[0]
@@ -60,7 +60,7 @@ def main():
         run_compose(detach="--detach" in flags or "-d" in flags)
         return
 
-    print(f"❌ Unbekannter Befehl: {cmd}")
+    print(f"Unbekannter Befehl: {cmd}")
     sys.exit(1)
 
 if __name__ == "__main__":

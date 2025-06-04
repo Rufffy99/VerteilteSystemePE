@@ -59,16 +59,46 @@ Dieses System ist eine modulare verteilte Architektur zur Aufgabenverarbeitung, 
 ## 🤖 Laufzeitstruktur
 
 ```plaintext
+[Systemstart]
+Worker
+  |
+  | -- register_worker(type, address) --> Nameservice
+  |
+  +------------------------------------------------------+
+
+[Task-Einreichung]
 Client
   |
-  v
-Dispatcher <-----> Nameservice
+  | -- send_task(type, payload) --> Dispatcher
   |
-  v
-Worker [hash, reverse, ...]
+  +------------------------------------------------------+
+
+Dispatcher
   |
-  v
+  | Vergibt Task-ID
+  | Legt Task in Warteschlange
+  |
+  | -- lookup_worker(type) ----------> Nameservice
+  |                                     |
+  | <------- address response ----------|
+  |
+  | -- send task ---------------------> Worker
+  |                                     |
+  | <------- send result --------------|
+  |
+  | Speichert Ergebnis zu Task-ID
+
+[Parallel: Monitoring]
 Monitoring
+  |
+  | -- GET_STATS / GET_ALL_TASKS --> Dispatcher
+  | <------ Statusdaten zurück ----------------------------|
+
+[Unabhängig: Ergebnisabfrage durch Client]
+Client
+  |
+  | -- GET_RESULT(task_id) --> Dispatcher
+  | <------- Ergebnis oder Fehler zurück ------------------|
 ```
 
 - Der **Client** sendet Tasks an den **Dispatcher**.

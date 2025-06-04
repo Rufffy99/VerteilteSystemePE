@@ -24,6 +24,11 @@
         "name": "wait",
         "active": true,
         "description": "Delays processing for a specified duration."
+    },
+    {
+        "name": "random_fact",
+        "active": true,
+        "description": "Generates a random fact from an API."
     }
     ]
 }

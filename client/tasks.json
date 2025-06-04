@@ -1,7 +1,15 @@
 [
   [
-    "reverse",
-    "socket"
+    "random_fact",
+    "random"
+  ],
+  [
+    "random_fact",
+    "random"
+  ],
+  [
+    "random_fact",
+    "random"
   ],
   [
     "reverse",
@@ -32,12 +40,8 @@
     "distributed"
   ],
   [
-    "reverse",
-    "socket"
-  ],
-  [
-    "hash",
-    "hashme"
+    "random_fact",
+    "random"
   ],
   [
     "wait",
@@ -112,8 +116,8 @@
     "queue"
   ],
   [
-    "reverse",
-    "queue"
+    "random_fact",
+    "random"
   ],
   [
     "sum",
@@ -204,8 +208,8 @@
     "4"
   ],
   [
-    "sum",
-    "4,9,1,7,2"
+    "random_fact",
+    "random"
   ],
   [
     "reverse",
@@ -374,6 +378,10 @@
   [
     "sum",
     "10,2,2"
+  ],
+  [
+    "random_fact",
+    "random"
   ],
   [
     "sum",
