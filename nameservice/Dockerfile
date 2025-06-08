@@ -1,5 +1,6 @@
 FROM python:3-alpine
 
+
 WORKDIR /app
 COPY nameservice/ .
 COPY shared/ shared/
