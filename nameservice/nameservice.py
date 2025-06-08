@@ -23,35 +23,18 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s"
 )
 
-
 def handle_request(data, addr, sock):
     """
     Handles an incoming network request for worker registration, lookup, or deregistration.
-    Parameters:
-        data (bytes): The raw incoming message data to be decoded.
-        addr (tuple): The address (IP, port) of the client that sent the request.
-        sock (socket.socket): The socket object used to send the response back to the client.
-    Behavior:
-        - Decodes the incoming data to determine the message type and its associated content.
-        - For a REGISTER_WORKER message:
-              * Extracts the worker type and address from the content.
-              * Registers the worker by adding an entry to the global registry.
-              * Sends a confirmation response indicating successful registration.
-        - For a LOOKUP_WORKER message:
-              * Looks up the worker address in the registry based on the provided worker type.
-              * Sends the worker’s address if found, otherwise sends an error indicating that no worker was found.
-        - For a DEREGISTER_WORKER message:
-              * Finds and removes all registry entries matching the provided worker address.
-              * Sends a response indicating how many entries were deregistered.
-        - For any other message types:
-              * Sends an error response indicating an unknown message type.
-    Side Effects:
-        - Modifies the global registry in the case of registration and deregistration requests.
-        - Sends a response message to the client using sock.sendto().
     """
-    
-    msg_type, content = decode_message(data)
-    
+    logging.info(f"Received data from {addr}")
+    try:
+        msg_type, content = decode_message(data)
+        logging.info(f"Decoded message type: {msg_type} with content: {content} from {addr}")
+    except Exception as e:
+        logging.error(f"Failed to decode message from {addr}: {e}")
+        return
+
     if msg_type == REGISTER_WORKER:
         wtype = content.get("type")
         ip = addr[0]
@@ -61,7 +44,6 @@ def handle_request(data, addr, sock):
             registry[wtype] = {"address": address, "last_seen": time.time()}
         response = {"message": f"Registered {wtype} at {address}"}
         logging.info(f"Registered worker '{wtype}' at address {address}")
-
 
     elif msg_type == LOOKUP_WORKER:
         wtype = content.get("type")
@@ -73,7 +55,6 @@ def handle_request(data, addr, sock):
             else:
                 response = {"error": f"No active worker found for type '{wtype}'"}
                 logging.warning(f"Lookup for worker type '{wtype}' failed: no active entry found")
-
 
     elif msg_type == DEREGISTER_WORKER:
         ip = addr[0]
@@ -113,30 +94,34 @@ def handle_request(data, addr, sock):
         response = {"error": "Unknown message type"}
         logging.warning(f"Received unknown message type: {msg_type}")
 
-    sock.sendto(encode_message("RESPONSE", response), addr)
-
+    try:
+        sock.sendto(encode_message("RESPONSE", response), addr)
+        logging.info(f"Sent response to {addr}: {response}")
+    except Exception as e:
+        logging.error(f"Failed to send response to {addr}: {e}")
 
 def run_nameservice():
     """
-    Run the name service by binding a UDP socket to the configured HOST and PORT and listening for incoming requests.
-    This function performs the following steps:
-        1. Creates a UDP socket.
-        2. Binds the socket to the host and port specified by the global variables HOST and PORT.
-        3. Enters an infinite loop to listen for data on the socket.
-        4. For each incoming request, spawns a new thread to handle the request by calling the handle_request function.
-    Notes:
-        - The run_nameservice function assumes that the variables HOST and PORT are defined externally.
-        - The handle_request function should be implemented to process each request appropriately.
+    Run the name service by binding a UDP socket to the configured HOST and PORT.
     """
-    
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.bind((HOST, PORT))
-    logging.info(f"[NameService] Listening on {HOST}:{PORT}")
-    
-    while True:
-        data, addr = sock.recvfrom(4096)
-        threading.Thread(target=handle_request, args=(data, addr, sock)).start()
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.bind((HOST, PORT))
+        logging.info(f"[NameService] Listening on {HOST}:{PORT}")
+    except Exception as e:
+        logging.critical(f"Failed to bind socket on {HOST}:{PORT}: {e}")
+        return
 
+    while True:
+        try:
+            data, addr = sock.recvfrom(4096)
+            logging.info(f"Incoming connection from {addr}")
+            thread = threading.Thread(target=handle_request, args=(data, addr, sock))
+            thread.start()
+            logging.info(f"Spawned thread {thread.name} to handle request from {addr}")
+        except Exception as e:
+            logging.error(f"Exception occurred while receiving data: {e}")
 
 if __name__ == "__main__":
+    logging.info("Starting nameservice...")
     run_nameservice()

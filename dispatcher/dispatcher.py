@@ -36,7 +36,7 @@ live_stats = {
     "avg_completion_by_worker": {}
 }
 
-def lookup_worker(task_type):
+def lookup_worker(task_type): # TODO
     """
     Lookup a worker's address based on the given task type.
     This function creates a UDP socket to send a lookup request message containing the task type
@@ -49,21 +49,31 @@ def lookup_worker(task_type):
         The address of the worker as received from the lookup, or None if no valid address is found or
         if the request times out.
     """
+    logging.info(f"Lookup worker for task type: {task_type}")
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
         msg = encode_message(LOOKUP_WORKER, {"type": task_type})
-        sock.sendto(msg, NAMESERVICE_ADDRESS)
+        try:
+            sock.sendto(msg, NAMESERVICE_ADDRESS)
+            logging.info(f"Sent lookup message to name service at {NAMESERVICE_ADDRESS}")
+        except Exception as e:
+            logging.error(f"Failed to send lookup message: {e}")
+            return None
         sock.settimeout(2.0)
         try:
             data, _ = sock.recvfrom(4096)
+            logging.info("Received response from name service")
             _, response = decode_message(data)
             address = response.get("address")
             if not address:
+                logging.warning("No worker address found in name service response")
                 return None
+            logging.info(f"Worker address found: {address}")
             return address
         except socket.timeout:
+            logging.warning("Timeout waiting for name service response")
             return None
 
-def try_dispatch_tasks():
+def try_dispatch_tasks(): # TODO
     """
     Tries to dispatch tasks from the global task_queue to available workers.
     This function iterates over a copy of the global task_queue while holding a lock
@@ -103,7 +113,7 @@ def try_dispatch_tasks():
             except Exception as e:
                 logging.error(f"Failed to dispatch task {task.id}: {e}")
 
-def handle_post_task(data, addr, sock):
+def handle_post_task(data, addr, sock): # TODO
     """
     Handles a POST task request by creating a new task from the provided data,
     updating global task counters and statistics, appending the task to the task queue,
@@ -124,6 +134,7 @@ def handle_post_task(data, addr, sock):
         - Logs an error message if there's any failure in sending the response back to the client.
     """
     global task_id_counter
+    logging.info(f"Received POST_TASK from {addr} with data: {data}")
     with lock:
         task_id = task_id_counter
         task_id_counter += 1
@@ -144,16 +155,19 @@ def handle_post_task(data, addr, sock):
 
         task_queue.append(task)
         task_results[task.id] = task
+        logging.info(f"Created and enqueued task {task.id} of type '{task.type}' from {addr}")
 
     try_dispatch_tasks()
+    logging.info(f"Dispatched tasks after adding task {task.id}")
 
     try:
-        sock.sendto(encode_message("RESPONSE", {"message": f"Task received, ID = {task.id}"}), addr)
-        logging.info(f"Sent response for task {task.id} to {addr}")
+        response = {"message": f"Task received, ID = {task.id}"}
+        sock.sendto(encode_message("RESPONSE", response), addr)
+        logging.info(f"Sent response for task {task.id} to {addr}: {response}")
     except Exception as e:
         logging.error(f"Failed to send response for task {task.id} to {addr}: {e}")
 
-def handle_get_result(data, addr, sock):
+def handle_get_result(data, addr, sock): # TODO
     """
     Handles a GET result request by retrieving the task's result based on a given task ID and sending an appropriate response.
     Parameters:
@@ -171,19 +185,24 @@ def handle_get_result(data, addr, sock):
         None
     """
     task_id = data.get("task_id")
+    logging.info(f"Handling GET_RESULT for task_id: {task_id} from {addr}")
     with lock:
         task = task_results.get(task_id)
+    
     if task and task.result:
         response = {"result": task.result}
+        logging.info(f"Task {task_id} found with result. Sending result.")
     elif task:
         response = {"error": "Result not ready"}
+        logging.info(f"Task {task_id} found but result not ready.")
     else:
         response = {"error": "Task not found"}
-
-    logging.info(f"Result request for task {task_id} from {addr}: {response}")
+        logging.info(f"Task {task_id} not found in task_results.")
+    
+    logging.info(f"GET_RESULT response for task {task_id} to {addr}: {response}")
     sock.sendto(encode_message("RESPONSE", response), addr)
 
-def handle_result_return(data, addr, sock):
+def handle_result_return(data, addr, sock): # TODO
     """
     Process the result of a task returned from a worker.
     This function retrieves and updates the task corresponding to the provided
@@ -211,21 +230,27 @@ def handle_result_return(data, addr, sock):
         try_dispatch_tasks) that manage shared state and messaging within the application.
     """
     
+    logging.info(f"Handling RESULT_RETURN for task {data.get('task_id')} from {addr}")
     task_id = data.get("task_id")
     result = data.get("result")
     with lock:
         task = task_results.get(task_id)
         if task:
+            logging.info(f"Task {task_id} found. Updating result and marking as done.")
             task.result = result
             now = time.time()
             task.status = "done"
             task.timestamp_completed = now
             if task in task_queue:
                 task_queue.remove(task)
+                logging.info(f"Task {task_id} removed from task queue.")
+            else:
+                logging.info(f"Task {task_id} was not in task queue.")
 
             duration = task.timestamp_completed - task.timestamp_created
             live_stats["completed_tasks"] += 1
             live_stats["open_tasks"] -= 1
+            logging.info(f"Task {task_id} completed in {duration:.2f} seconds.")
 
             all_durations = [
                 t.timestamp_completed - t.timestamp_created
@@ -234,6 +259,7 @@ def handle_result_return(data, addr, sock):
             ]
             if all_durations:
                 live_stats["avg_completion_time"] = round(sum(all_durations) / len(all_durations), 2)
+                logging.info(f"Updated avg_completion_time: {live_stats['avg_completion_time']} seconds.")
 
             worker_times = {}
             worker_counts = {}
@@ -247,15 +273,19 @@ def handle_result_return(data, addr, sock):
                 w: round(worker_times[w] / worker_counts[w], 2)
                 for w in worker_times
             }
+            logging.info(f"Updated avg_completion_by_worker: {live_stats['avg_completion_by_worker']}")
             response = {"message": "Result stored"}
         else:
+            logging.error(f"Task ID {task_id} not found in task_results.")
             response = {"error": "Task ID not found"}
-    logging.info(f"Result received for task {task_id} from {addr}")
+    logging.info(f"Result received for task {task_id} from {addr}, response: {response}")
     sock.sendto(encode_message("RESPONSE", response), addr)
 
     if task and task.assigned_worker:
         worker_busy[task.assigned_worker] = False
+        logging.info(f"Worker {task.assigned_worker} marked as available.")
     try_dispatch_tasks()
+    logging.info("Attempted to dispatch tasks after handling RESULT_RETURN.")
 
 def handle_get_all_tasks(data, addr, sock):
     """
@@ -361,6 +391,7 @@ def dispatcher_loop():
 
     while True:
         data, addr = sock.recvfrom(4096)
+        logging.info(f"[DEBUG] Raw UDP from {addr}: {data}")
         msg_type, content = decode_message(data)
         logging.info(f"Received message from {addr}: type={msg_type}, content={content}")
 

@@ -33,6 +33,13 @@ logging.basicConfig(
 RECEIVE_BUFFER_SIZE = 4096
 
 def load_allowed_task_types():
+    """
+    Loads allowed task types by scanning the "worker_types" directory located alongside this file.
+    This function examines each Python file in the "worker_types" directory (ignoring any non-file entries and the "__init__.py" file) and extracts the stem (filename without the extension) from valid files. The resulting set of strings represents the task types allowed in the worker.
+    Returns:
+        set: A set of task type names (as strings) extracted from the valid Python files.
+    """
+    
     types_path = Path(__file__).parent / "worker_types"
     return {
         f.stem for f in types_path.glob("*.py")
@@ -42,6 +49,22 @@ def load_allowed_task_types():
 ALLOWED_TASK_TYPES = load_allowed_task_types()
 
 def import_task_handler(task_type):
+    """
+    Imports and returns a task handler module corresponding to the given task_type.
+    This function constructs a file path based on the current file's directory and
+    assumes that the corresponding module is located in the "worker_types" subdirectory
+    with a filename matching the pattern "<task_type>.py". It dynamically imports the module
+    using importlib utilities and returns the module object.
+    Parameters:
+        task_type (str): The type of task handler to import, corresponding to the module
+                         filename (without the .py extension) in the "worker_types" directory.
+    Returns:
+        module: The imported Python module corresponding to the given task_type.
+    Raises:
+        FileNotFoundError: If the module file does not exist at the constructed path.
+        ImportError: If there is an error during the import of the module.
+    """
+    
     module_path = Path(__file__).parent / "worker_types" / f"{task_type}.py"
     spec = importlib.util.spec_from_file_location(task_type, module_path)
     module = importlib.util.module_from_spec(spec)
@@ -49,6 +72,14 @@ def import_task_handler(task_type):
     return module
 
 def get_container_address():
+    """
+    Returns the address of the container or host running the worker.
+    This function retrieves the container name from the "HOSTNAME" environment variable if available. If not,
+    it uses the host's machine name via socket.gethostname(). It then formats the result by appending the 
+    WORKER_PORT to form an address string in the format "<container_name>:<WORKER_PORT>".
+    Returns:
+        str: The formatted address string for the container or host.
+    """
     container_name = os.environ.get("HOSTNAME", socket.gethostname())
     return f"{container_name}:{WORKER_PORT}"
 

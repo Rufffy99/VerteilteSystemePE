@@ -49,6 +49,7 @@ def send_task(task_type, payload):
             "type": task_type,
             "payload": payload
         })
+        print(f"📤 Sende an Dispatcher {DISPATCHER_ADDRESS[0]}:{DISPATCHER_ADDRESS[1]} – Typ: {task_type}, Payload: {payload}")
         sock.sendto(msg, DISPATCHER_ADDRESS)
         logging.info(f"Sent task to dispatcher: type={task_type}, payload={payload}")
 
@@ -78,6 +79,7 @@ def request_result(task_id):
         msg = encode_message(GET_RESULT, {
             "task_id": task_id
         })
+        print(f"📤 Anfrage an Dispatcher {DISPATCHER_ADDRESS[0]}:{DISPATCHER_ADDRESS[1]} – Task-ID: {task_id}")
         sock.sendto(msg, DISPATCHER_ADDRESS)
         logging.info(f"Requested result for task ID: {task_id}")
 
@@ -193,15 +195,17 @@ def main():
     """
     parser = argparse.ArgumentParser(description="Client für das Verteilte-System.")
     parser.add_argument("--dispatcher-ip", default="127.0.0.1", help="IP-Adresse des Dispatchers (Standard: 127.0.0.1)")
-    args, unknown = parser.parse_known_args()
+    parser.add_argument("command", nargs="?", help="Befehl: send, result, simulate, run")
+    parser.add_argument("arg1", nargs="?", help="Zusätzliches Argument 1")
+    parser.add_argument("arg2", nargs="?", help="Zusätzliches Argument 2")
+    args = parser.parse_args()
 
     global DISPATCHER_ADDRESS
     DISPATCHER_ADDRESS = (args.dispatcher_ip, 4000)
 
     logging.info("Client started!")
-    if len(sys.argv) < 2:
-        logging.error("Invalid arguments provided.")
-
+    if not args.command:
+        logging.error("Kein Befehl angegeben.")
         print("Usage:")
         print("  New Task: python client.py send <type> <payload>")
         print("  Query Result: python client.py result <task_id>")
@@ -209,18 +213,17 @@ def main():
         print("  Run Idle: python client.py run")
         return
 
-    command = sys.argv[1]
-    if command == "send" and len(sys.argv) == 4:
-        send_task(sys.argv[2], sys.argv[3])
-    elif command == "result" and len(sys.argv) == 3:
+    if args.command == "send" and args.arg1 and args.arg2:
+        send_task(args.arg1, args.arg2)
+    elif args.command == "result" and args.arg1:
         try:
-            task_id = int(sys.argv[2])
+            task_id = int(args.arg1)
             request_result(task_id)
         except ValueError:
             logging.error("Invalid task ID format: not an integer.")
-    elif command == "simulate":
+    elif args.command == "simulate":
         simulate()
-    elif command == "run":
+    elif args.command == "run":
         print("Client im Wartezustand. Beende mit STRG+C.")
         try:
             while True:

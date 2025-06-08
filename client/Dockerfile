@@ -4,4 +4,4 @@ COPY client/ .
 COPY shared/ shared/
 ENV PYTHONPATH=/app
 RUN pip install --no-cache-dir --trusted-host pypi.org --trusted-host files.pythonhosted.org -r requirements.txt
-CMD ["python", "client.py", "run"]
+CMD ["python" "client.py" "simulate" "--dispatcher-ip" "192.168.1.10"]
