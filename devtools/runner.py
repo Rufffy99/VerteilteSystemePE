@@ -16,17 +16,27 @@ def full_reset():
         print("Logs gelöscht")
     subprocess.run(["docker", "image", "prune", "-f"], check=False)
 
-def run_compose(detach=False, rebuild=False, no_cache=False):
-    cmd = ["docker-compose", "-f", COMPOSE_FILE]
-    if rebuild:
-        build_cmd = cmd + ["build"]
-        if no_cache:
-            build_cmd.append("--no-cache")
-        subprocess.run(build_cmd, check=True)
-    up_cmd = cmd + ["up"]
+def run_compose(detach=False):
+    cmd = ["docker-compose", "-f", COMPOSE_FILE, "up"]
     if detach:
-        up_cmd.append("-d")
-    subprocess.run(up_cmd, check=True)
+        cmd.append("-d")
+    subprocess.run(cmd, check=True)
+
+def build_compose():
+    cmd = ["docker-compose", "-f", COMPOSE_FILE, "build"]
+    subprocess.run(cmd, check=True)
+
+def run_selected_containers(containers):
+    if not os.path.exists(COMPOSE_FILE):
+        generate_compose()
+    cmd = ["docker-compose", "-f", COMPOSE_FILE, "up"] + containers
+    subprocess.run(cmd, check=True)
+
+def build_selected_containers(containers):
+    if not os.path.exists(COMPOSE_FILE):
+        generate_compose()
+    cmd = ["docker-compose", "-f", COMPOSE_FILE, "build"] + containers
+    subprocess.run(cmd, check=True)
 
 def main():
     args = sys.argv[1:]
@@ -51,7 +61,7 @@ def main():
             full_reset()
         delete_compose_file()
         generate_compose()
-        run_compose(detach="--detach" in flags or "-d" in flags, rebuild=True, no_cache="--no-cache" in flags)
+        build_compose()
         return
 
     if cmd == "run":

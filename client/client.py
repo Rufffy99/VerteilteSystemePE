@@ -110,6 +110,7 @@ def simulate():
     """
     print("Simuliere mehrere Aufgaben...")
     logging.info("Simulating multiple tasks...")
+    logging.info("Dispatcher address: %s", DISPATCHER_ADDRESS)
 
     task_file = os.path.join(os.path.dirname(__file__), "tasks.json")
     if not os.path.isfile(task_file):
@@ -124,6 +125,7 @@ def simulate():
 
     for i, (task_type, payload) in enumerate(tasks):
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            logging.info(f"[SIMULATION] Successfully created UDP socket for task '{task_type}' connecting to {DISPATCHER_ADDRESS[0]}:{DISPATCHER_ADDRESS[1]}")
             msg = encode_message(POST_TASK, {
                 "type": task_type,
                 "payload": payload
@@ -201,7 +203,8 @@ def main():
     args = parser.parse_args()
 
     global DISPATCHER_ADDRESS
-    DISPATCHER_ADDRESS = (args.dispatcher_ip, 4000)
+    dispatcher_ip = os.environ.get("DISPATCHER_IP", args.dispatcher_ip)
+    DISPATCHER_ADDRESS = (dispatcher_ip, 4000)
 
     logging.info("Client started!")
     if not args.command:
