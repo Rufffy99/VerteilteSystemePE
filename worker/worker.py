@@ -34,10 +34,12 @@ RECEIVE_BUFFER_SIZE = 4096
 
 def load_allowed_task_types():
     """
-    Loads allowed task types by scanning the "worker_types" directory located alongside this file.
-    This function examines each Python file in the "worker_types" directory (ignoring any non-file entries and the "__init__.py" file) and extracts the stem (filename without the extension) from valid files. The resulting set of strings represents the task types allowed in the worker.
+    Load allowed task types from the 'worker_types' directory.
+    This function inspects the directory named "worker_types" located in the same directory as this file. 
+    It gathers the stem (filename without extension) from each Python file present in that directory, 
+    excluding the "__init__.py" file, and returns them as a set.
     Returns:
-        set: A set of task type names (as strings) extracted from the valid Python files.
+        set: A set of strings representing the allowed task types, derived from the filenames in the directory.
     """
     
     types_path = Path(__file__).parent / "worker_types"
@@ -50,21 +52,20 @@ ALLOWED_TASK_TYPES = load_allowed_task_types()
 
 def import_task_handler(task_type):
     """
-    Imports and returns a task handler module corresponding to the given task_type.
-    This function constructs a file path based on the current file's directory and
-    assumes that the corresponding module is located in the "worker_types" subdirectory
-    with a filename matching the pattern "<task_type>.py". It dynamically imports the module
-    using importlib utilities and returns the module object.
-    Parameters:
-        task_type (str): The type of task handler to import, corresponding to the module
-                         filename (without the .py extension) in the "worker_types" directory.
+    Imports and returns a module that handles a task based on its type.
+    This function dynamically imports a task handler module located in the "worker_types" 
+    subdirectory relative to the current file. The module filename is derived from the
+    provided task type.
+    Args:
+        task_type (str): The name of the task type. This is used to construct the module's
+                         filename (e.g., "example" corresponds to "example.py").
     Returns:
-        module: The imported Python module corresponding to the given task_type.
-    Raises:
-        FileNotFoundError: If the module file does not exist at the constructed path.
-        ImportError: If there is an error during the import of the module.
+        module: The imported module object corresponding to the provided task type.
+    Note:
+        This function assumes that the module file exists in the expected directory structure.
+        Errors during module loading (e.g., file not found, syntax errors in the module) will
+        propagate as exceptions.
     """
-    
     module_path = Path(__file__).parent / "worker_types" / f"{task_type}.py"
     spec = importlib.util.spec_from_file_location(task_type, module_path)
     module = importlib.util.module_from_spec(spec)
@@ -73,89 +74,101 @@ def import_task_handler(task_type):
 
 def get_container_address():
     """
-    Returns the address of the container or host running the worker.
-    This function retrieves the container name from the "HOSTNAME" environment variable if available. If not,
-    it uses the host's machine name via socket.gethostname(). It then formats the result by appending the 
-    WORKER_PORT to form an address string in the format "<container_name>:<WORKER_PORT>".
+    Determines and returns the container's network address as a string in the format "<ip>:<port>".
+    This function attempts to determine the container's IP address by creating a UDP socket that connects to
+    Google's public DNS server (8.8.8.8) on port 80. The IP address is extracted from the socket's own address.
+    If any exception occurs during this process, it falls back to resolving the hostname's IP address using the
+    socket's gethostbyname method. The returned string appends the port number (WORKER_PORT) to the IP address.
     Returns:
-        str: The formatted address string for the container or host.
+        str: The container's address in the format "<ip>:<port>".
     """
-    container_name = os.environ.get("HOSTNAME", socket.gethostname())
-    return f"{container_name}:{WORKER_PORT}"
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+    except Exception:
+        ip = socket.gethostbyname(socket.gethostname())
+    return f"{ip}:{WORKER_PORT}"
 
-def register_with_nameservice():
+def register_with_nameservice(max_attempts=10, delay=1):
     """
-    Registers the worker with the nameservice.
-    This function performs the following operations:
-    1. Creates a UDP socket for communication.
-    2. Builds a registration message by encoding the worker's information, which includes:
-        - The message type (REGISTER_WORKER)
-        - The worker type (WORKER_TYPE)
-        - The worker address, formatted as "worker:<WORKER_PORT>".
-    3. Sends the encoded message to the nameservice at NAMESERVICE_ADDRESS using the UDP protocol.
-    4. Prints a confirmation message indicating the worker has been successfully registered.
-    Note:
-    Ensure that the following variables and functions are defined in the current context:
-         - REGISTER_WORKER
-         - WORKER_TYPE
-         - WORKER_PORT
-         - NAMESERVICE_ADDRESS
-         - encode_message
+    Attempts to register the worker with the nameservice by sending a registration message
+    that includes the worker type and container address.
+
+    This function will try to register the worker up to 'max_attempts' times, waiting 'delay'
+    seconds between each attempt. On each try, it sends a message via a UDP socket to the nameservice
+    and waits for a response. If the registration is successful, it logs the response and returns.
+    If all attempts fail, it logs an error and exits the program.
+
+    Parameters:
+        max_attempts (int, optional): The maximum number of registration attempts (default is 10).
+        delay (int, optional): The delay in seconds between successive registration attempts (default is 1).
+
+    Returns:
+        None
+
+    Side Effects:
+        - May exit the program if registration fails after the maximum number of attempts.
+        - Logs registration status and errors.
     """
-    import socket as pysocket
-    hostname = socket.gethostname()
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
     msg = encode_message(REGISTER_WORKER, {
-        "type": WORKER_TYPE,
-        "address":f"{get_container_address()}"
+        "type": WORKER_TYPE.lower(),
+        "address": get_container_address()
     })
-    sock.sendto(msg, NAMESERVICE_ADDRESS)
-    logging.info(f"Registered with nameservice as type '{WORKER_TYPE}' on port {WORKER_PORT}")
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.settimeout(1)
+            sock.sendto(msg, NAMESERVICE_ADDRESS)
+            data, _ = sock.recvfrom(RECEIVE_BUFFER_SIZE)
+            _, response = decode_message(data)
+            logging.info(f"Registered with nameservice: {response}")
+            return
+        except Exception as e:
+            logging.warning(f"Registration attempt {attempt}/{max_attempts} failed: {e}")
+            time.sleep(delay)
+
+    logging.error("Could not register with nameservice after several attempts. Exiting.")
+    sys.exit(1)
 
 def deregister_with_nameservice():
     """
-    Deregisters the worker from the nameservice.
-    This function creates a UDP socket, constructs a deregistration message with
-    the worker type and address, and sends it to the nameservice. The operation is
-    logged to provide information about the deregistration event, including the
-    worker type and port.
-    Side Effects:
-        - Sends a UDP message to the nameservice for deregistration.
-        - Logs the deregistration process using the logging system.
-    Exceptions:
-        - May raise socket-related exceptions if there are issues with network communication.
+    Deregister the worker from the nameservice.
+    This function creates a UDP socket, encodes a deregistration message containing the worker type and its address,
+    and sends the message to the nameservice. If the message is sent successfully, an informational log is recorded.
+    If an error occurs during this process, the exception is caught and an error log is recorded.
+    Raises:
+        Exception: If any error occurs during socket creation, message encoding, or sending.
     """
     
-    hostname = socket.gethostname()
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    msg = encode_message("DEREGISTER_WORKER", {
-        "type": WORKER_TYPE,
-        "address":f"{get_container_address()}"
-    })
-    sock.sendto(msg, NAMESERVICE_ADDRESS)
-    logging.info(f"Deregistered from nameservice as type '{WORKER_TYPE}' on port {WORKER_PORT}")
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        msg = encode_message("DEREGISTER_WORKER", {
+            "type": WORKER_TYPE.lower(),
+            "address": get_container_address()
+        })
+        sock.sendto(msg, NAMESERVICE_ADDRESS)
+        logging.info(f"Deregistered from nameservice as type '{WORKER_TYPE}' on port {WORKER_PORT}")
+    except Exception as e:
+        logging.error(f"Failed to deregister from nameservice: {e}")
 
 def send_heartbeat():
     """
-    Sends periodic heartbeat messages to the nameservice.
-    This function creates a UDP socket and constructs a heartbeat message containing
-    the worker's type and address. It then enters an infinite loop where it sends the
-    heartbeat message to a predefined nameservice address every 10 seconds. Any errors
-    encountered during the send operation are logged.
+    Send heartbeat message in an infinite loop.
+    Creates a UDP socket and continuously sends a heartbeat message to the name service.
+    The heartbeat message includes the worker type (as a lowercase string) and the container's address.
+    If sending the message is successful, a debug log is recorded; otherwise, an error log is recorded.
+    The function pauses for 10 seconds between each heartbeat message.
     Note:
-        This function relies on external definitions such as:
-        - encode_message: To encode the heartbeat message.
-        - HEARTBEAT: The message type for heartbeat messages.
-        - WORKER_TYPE: The type of worker sending the message.
-        - WORKER_PORT: The port on which the worker is accessible.
-        - NAMESERVICE_ADDRESS: The address of the nameservice to send the heartbeat to.
+        This function runs indefinitely, so it should be executed in a separate thread or process
+        to avoid blocking the main execution flow.
     """
-    
-    hostname = socket.gethostname()
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     msg = encode_message(HEARTBEAT, {
-        "type": WORKER_TYPE,
-        "address":f"{get_container_address()}"
+        "type": WORKER_TYPE.lower(),
+        "address": get_container_address()
     })
     while True:
         try:
@@ -167,30 +180,27 @@ def send_heartbeat():
 
 def handle_shutdown(signum, frame):
     """
-    Handles graceful shutdown upon receiving a termination signal.
-    Args:
-        signum (int): The numeric identifier of the signal.
-        frame (frame object): The current stack frame when the signal was received.
-    The function deregisters the worker from the nameservice, logs a shutdown message,
-    and terminates the process by exiting with a status code of 0.
+    Handles the shutdown process by deregistering the worker from the name service,
+    logging the shutdown event, and exiting the application.
+    Parameters:
+        signum (int): The signal number triggering the shutdown.
+        frame (FrameType): The current stack frame (unused).
+    This function performs cleanup operations and then terminates the program
+    with an exit code of 0.
     """
-    
     deregister_with_nameservice()
     logging.info("Worker shutting down...")
     sys.exit(0)
 
 def send_result(task_id, result):
     """
-    Sends the result of a completed task to the dispatcher over a UDP socket.
-    Parameters:
+    Send the result of a completed task to the dispatcher over a UDP connection.
+    Args:
         task_id: The unique identifier of the task.
-        result: The outcome/result of the task to be sent.
-    Behavior:
-        - Encodes the result and the task_id into a message using the `encode_message` function with a message type of RESULT_RETURN.
-        - Sends the encoded message to the dispatcher specified by DISPATCHER_ADDRESS using a UDP socket.
-        - Prints a log message indicating the result for the task has been sent, including the WORKER_TYPE and task_id.
-    Notes:
-        - DISPATCHER_ADDRESS, RESULT_RETURN, and WORKER_TYPE are assumed to be pre-defined global constants.
+        result: The result produced by the task.
+    Side Effects:
+        - Creates a new UDP socket to send the result.
+        - Logs the operation using logging.info.
     """
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     msg = encode_message(RESULT_RETURN, {
@@ -200,22 +210,26 @@ def send_result(task_id, result):
     sock.sendto(msg, DISPATCHER_ADDRESS)
     logging.info(f"Sent result for task {task_id}: {result}")
 
-
 def process_task(task_data):
     """
-    Process a task by dynamically importing the appropriate worker module based on the task type,
-    executing its handle function with the task payload, and sending the result.
+    Processes a task based on the provided task data by performing the following steps:
+    1. Instantiates a Task object using the given task_data.
+    2. Logs the start of task processing.
+    3. Validates the task type against a set of allowed types.
+    4. Dynamically imports the corresponding task handler module.
+    5. Executes the handler on the task payload.
+    6. Updates the task status to "done" if processing succeeds; otherwise, sets it to "failed" and logs the error.
+    7. Records the completion timestamp.
+    8. Sends the processing result using the send_result function.
     Parameters:
-        task_data (dict): A dictionary containing task attributes. It should contain at least:
-                          - 'type': A string indicating the type of the task, which determines the worker module to import.
-                          - 'id': An identifier for the task.
-                          - 'payload': The data to be processed by the worker module.
-    Behavior:
-        - Creates a Task object from the provided task_data.
-        - Dynamically imports the module from "worker.worker_types" corresponding to the task type.
-        - Executes the module's handle function using the task payload.
-        - Catches any exceptions raised during processing, setting the result to an error message.
-        - Sends the task ID and the resulting value (or error message) using send_result.
+        task_data (dict): A dictionary containing the necessary parameters to construct a Task object,
+                          including fields such as 'id', 'type', and 'payload'.
+    Raises:
+        ValueError: If the task type is not in ALLOWED_TASK_TYPES.
+    Side Effects:
+        - Logs processing details and errors.
+        - Updates the Task object's status and completion timestamp.
+        - Invokes send_result to deliver the result.
     """
     task = Task(**task_data)
     logging.info(f"Processing task {task.id} of type '{task.type}' with payload: {task.payload}")
@@ -231,24 +245,25 @@ def process_task(task_data):
         logging.error(f"Failed to process task {task.id}: {e}")
     finally:
         task.timestamp_completed = time.time()
-    
+
     send_result(task.id, result)
 
 def run_worker():
     """
-    Initializes and runs the worker service.
+    Runs the worker process that listens for tasks via UDP and processes them concurrently.
     This function performs the following steps:
     1. Registers the worker with a name service.
-    2. Creates a UDP socket and binds it to all interfaces ('0.0.0.0') on the specified WORKER_PORT.
-    3. Logs the startup message indicating the type of worker and the port it is listening on.
-    4. Enters an infinite loop to:
-        - Receive messages (up to 4096 bytes).
-        - Decode the received message to extract its content.
-        - Spawn a new thread to process the task using the decoded content.
-    Note:
-    - The function depends on several external components: register_with_nameservice, WORKER_PORT, WORKER_TYPE, decode_message, and process_task.
-    - Error handling is not explicitly performed within this function; any exceptions from socket operations or message decoding will propagate.
+    2. Creates a UDP socket bound to "0.0.0.0" on the specified WORKER_PORT.
+    3. Logs that it is listening on the port as the defined WORKER_TYPE.
+    4. Sets up signal handlers for SIGINT and SIGTERM to allow graceful shutdown via the handle_shutdown function.
+    5. Starts a daemon thread to periodically send heartbeat messages (using the send_heartbeat function) to indicate the worker is alive.
+    6. Enters an infinite loop to receive data (up to RECEIVE_BUFFER_SIZE) from the socket. For each received task:
+        - Logs the address of the sender.
+        - Decodes the received data using decode_message.
+        - Starts a new thread to process the task content by invoking process_task.
+    The function does not return any value and is designed to run continuously until interrupted.
     """
+    
     register_with_nameservice()
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -265,7 +280,6 @@ def run_worker():
         logging.info(f"Received task from {addr}")
         _, content = decode_message(data)
         threading.Thread(target=process_task, args=(content,)).start()
-
 
 if __name__ == "__main__":
     run_worker()

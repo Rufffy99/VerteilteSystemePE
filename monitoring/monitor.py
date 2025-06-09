@@ -23,14 +23,14 @@ WORKERS_JSON_PATH = "/app/workers.json"
 logging.info(f"Looking for workers.json at: {WORKERS_JSON_PATH}")
 def load_worker_config():
     """
-    Load worker configuration from a JSON file.
-    This function attempts to read and load worker configurations from a JSON file defined by the global variable WORKERS_JSON_PATH.
-    It expects the JSON to contain a "workers" key whose value is a list of worker configurations.
-    If the file is read and parsed successfully, the function returns the list associated with the "workers" key.
-    In case of any errors during file reading or JSON parsing, it logs an error message and returns an empty list.
+    Retrieves worker configuration from a JSON file.
+    This function tries to load worker configuration data from the JSON file specified by WORKERS_JSON_PATH.
+    If the file is read and parsed successfully, it returns the list of workers found under the "workers" key.
+    In case of any error during file access or JSON parsing, the error is logged, and an empty list is returned.
     Returns:
-        list: A list of worker configurations if successfully loaded, otherwise an empty list.
+        list: A list of worker configurations if the file exists and is properly formatted, otherwise an empty list.
     """
+    
     try:
         with open(WORKERS_JSON_PATH, "r") as f:
             data = json.load(f)
@@ -40,6 +40,15 @@ def load_worker_config():
         return []
 
 def load_worker_types():
+    """
+    Retrieve the names of active worker types from the worker configuration.
+    This function loads the worker configuration data using the load_worker_config()
+    function and filters the workers to include only those with an 'active' status of True.
+    It then returns a list of the names of these active workers.
+    Returns:
+        list: A list of strings representing the names of active worker types.
+    """
+    
     workers = load_worker_config()
     return [w["name"] for w in workers if w.get("active") is True]
 
@@ -55,16 +64,22 @@ latest_pending_tasks = []
 
 def query_dispatcher_stats():
     """
-    Sends a UDP request to the dispatcher to retrieve statistics and a list of pending items.
-    This function creates a UDP socket, sets a timeout, and encodes a "GET_STATS" request. It then sends
-    this message to the dispatcher defined by DISPATCHER_ADDRESS. The function waits for a reply and
-    attempts to decode it. If the received message is of type "RESPONSE" and its content is a dictionary,
-    it extracts and returns the "pending" list and "stats" dictionary from the content. In case of any error,
-    a timeout, or if the message format does not match the expected structure, it returns an empty list and dictionary.
+    Queries the dispatcher for statistics.
+    This function sends a "GET_STATS" UDP message to a predefined dispatcher address (DISPATCHER_ADDRESS)
+    using a timeout of 1 second. It encodes the request message and sends it over the socket, then waits
+    for a response. When a response is received, it decodes the message into a type and content. The function
+    verifies that the response type is "RESPONSE" and that the content is a dictionary. If these conditions are met,
+    the function returns a tuple containing:
+        - A list of pending items (from the "pending" key in the response dictionary).
+        - A dictionary of statistics (from the "stats" key in the response dictionary).
+    In case of an exception or an invalid response (wrong message type or improperly formatted content),
+    the function returns an empty list and an empty dictionary.
     Returns:
-        tuple: A tuple where the first element is a list of pending items (or an empty list) and the second element
-               is a dictionary containing statistics (or an empty dictionary).
+        tuple: A tuple containing:
+            - list: The list of pending items from the dispatcher, or an empty list if an error occurs.
+            - dict: The dictionary of statistics from the dispatcher, or an empty dictionary if an error occurs.
     """
+    
     
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -81,13 +96,20 @@ def query_dispatcher_stats():
 
 def stats_updater():
     """
-    Continuously updates global state with dispatcher statistics.
-    In an infinite loop, this function queries dispatcher statistics using the
-    query_dispatcher_stats() function. If valid statistics are returned, it updates
-    the global variables 'latest_stats' and 'latest_pending_tasks' accordingly.
-    The loop pauses for one second between successive queries to throttle the
-    update frequency.
+    Continuously updates global statistics and pending task counts.
+    This function enters an infinite loop, querying the dispatcher for current statistics
+    and pending tasks using `query_dispatcher_stats()`. If statistics are returned, it updates
+    the global variables `latest_stats` and `latest_pending_tasks` accordingly. The function
+    sleeps for 1 second between each iteration to prevent excessive resource usage.
+    Global Variables:
+        latest_stats: Holds the most recent statistics from the dispatcher.
+        latest_pending_tasks: Holds the most recent count of pending tasks.
+    Notes:
+        - This function is designed to run indefinitely until explicitly interrupted.
+        - It assumes that the functions `query_dispatcher_stats()` and `time.sleep()` are
+          defined elsewhere in the codebase.
     """
+    
     global latest_stats, latest_pending_tasks
     while True:
         pending, stats = query_dispatcher_stats()
@@ -99,17 +121,15 @@ def stats_updater():
 @app.route("/events")
 def sse_stream():
     """
-    Provides a Server-Sent Events (SSE) stream for real-time updates.
-    This function constructs an inner generator function, event_stream, which continuously monitors
-    the global variables 'latest_stats' and 'latest_pending_tasks'. It serializes these values into JSON
-    and, if the new state differs from the previous one, yields a properly formatted SSE message. The
-    function then returns a Flask Response object configured with the "text/event-stream" mimetype to
-    enable streaming of events to connected clients.
+    Generates a Server-Sent Events (SSE) stream response.
+    This function defines an inner generator function `event_stream` that continuously monitors for updates
+    to the latest statistics and pending tasks. It constructs a combined JSON object from these values and compares
+    it to the previously sent data. If the data has changed, the new data is formatted as an SSE-compatible message
+    and yielded. The generator pauses for one second between each check to control the update frequency.
     Returns:
-        Response: A Flask Response object streaming real-time JSON updates following the SSE protocol.
-    Note:
-        The function assumes that 'latest_stats' and 'latest_pending_tasks' are defined in the outer scope.
+        Response: A Flask Response object with MIME type "text/event-stream" that streams the event data.
     """
+    
     def event_stream():
         last_data = ""
         while True:
@@ -125,7 +145,7 @@ def sse_stream():
     return Response(event_stream(), mimetype="text/event-stream")
 
 
-@app.route("/") #TODO
+@app.route("/")
 def dashboard():
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -150,10 +170,12 @@ def dashboard():
     for addr, types in workers_by_address.items():
         for t in types:
             if t not in worker_address_map:
-                worker_address_map[t] = addr
+                worker_address_map[t.strip().lower()] = addr
 
     for w in worker_config:
-        w['address'] = worker_address_map.get(w['name'], None)
+        w['address'] = worker_address_map.get(w['name'].strip().lower(), None)
+
+    logging.info(f"Worker info: {worker_info}")
 
     return render_template_string(
         TEMPLATE,
@@ -165,7 +187,7 @@ def dashboard():
     )
 
 
-@app.route("/logs") #TODO
+@app.route("/logs")
 def logs():
     """
     Retrieve log files from the "/logs" directory and render them using a template.
@@ -197,7 +219,7 @@ def logs():
                         logs[filename] = f.read()
     return render_template_string(TEMPLATE, tab="logs", logs=logs, selected_file=selected_files)
 
-@app.route("/containers") #TODO
+@app.route("/containers")
 def containers():
     """
     Retrieves information about Docker containers and renders an HTML template with the container status.
@@ -261,3 +283,4 @@ def containers():
 if __name__ == "__main__":
     threading.Thread(target=stats_updater, daemon=True).start()
     app.run(host="0.0.0.0", port=8080)
+    print("Monitoring service started on port 8080")

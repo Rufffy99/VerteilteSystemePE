@@ -5,12 +5,13 @@ import logging
 import os
 import random
 import argparse
+import time
 
 try:
     from shared.protocol import encode_message, decode_message, POST_TASK, GET_RESULT
 except ModuleNotFoundError as e:
-    print("❌ Fehler beim Import von shared:", e)
-    print("Stelle sicher, dass PYTHONPATH korrekt gesetzt ist und der Ordner shared/ vorhanden ist.")
+    print("Error importing shared module:", e)
+    print("Make sure PYTHONPATH is set correctly and the shared/ directory exists.")
     sys.exit(1)
 
 LOG_DIR = os.environ.get("LOG_DIR", ".")
@@ -23,183 +24,183 @@ logging.basicConfig(
 )
 
 DISPATCHER_ADDRESS = None
+MAX_RETRIES = 5
+RETRY_DELAY = 1  # seconds
 
+def send_with_retry(msg, address):
+    """
+    Send a message reliably over UDP with retry attempts.
+    This function sends a given message to a specified address using UDP. It attempts
+    to receive a response within a set timeout period. If the response is not received before
+    the timeout expires, it retries sending the message up to MAX_RETRIES times, waiting for
+    RETRY_DELAY seconds between each attempt.
+    Parameters:
+        msg (bytes): The message to be sent.
+        address (tuple): The destination address as a tuple (host, port).
+    Returns:
+        Any: The decoded response from the server if a response is received within the allowed
+             number of retries. The response is expected to be the second element of the tuple
+             returned by the decode_message function.
+        None: If no response is received after MAX_RETRIES attempts.
+    """
+    
+    for attempt in range(MAX_RETRIES):
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.sendto(msg, address)
+            sock.settimeout(2)
+            try:
+                data, _ = sock.recvfrom(4096)
+                return decode_message(data)[1]
+            except socket.timeout:
+                logging.warning(f"Timeout on attempt {attempt + 1}, retrying...")
+                time.sleep(RETRY_DELAY)
+    return None
 
 def send_task(task_type, payload):
     """
-    Send a task to the dispatcher using a UDP socket.
-    This function constructs a message containing the task type and payload, 
-    encodes it with the POST_TASK operation, and sends it to the dispatcher.
-    It then waits for a response from the dispatcher, decodes the response,
-    and prints a confirmation message.
+    Sends a task message to the dispatcher with the specified task type and payload.
+    This function constructs a message by encoding the task type and payload, then sends it to a predetermined dispatcher address.
+    If a response is received from the dispatcher, it prints the response. Otherwise, it prints an error message indicating
+    that the dispatcher is unreachable.
     Parameters:
-        task_type: The type of the task to be sent.
-        payload: The associated data for the task.
-    Notes:
-        - It uses a UDP socket to handle the communication.
-        - The functions 'encode_message' and 'decode_message' are used for 
-          message formatting and parsing respectively.
-        - The constant 'DISPATCHER_ADDRESS' must be defined to specify the 
-          target address for the dispatcher.
+        task_type: The type identifier for the task to be processed by the dispatcher.
+        payload: The data or parameters associated with the task.
     Returns:
         None
     """
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-        msg = encode_message(POST_TASK, {
-            "type": task_type,
-            "payload": payload
-        })
-        print(f"📤 Sende an Dispatcher {DISPATCHER_ADDRESS[0]}:{DISPATCHER_ADDRESS[1]} – Typ: {task_type}, Payload: {payload}")
-        sock.sendto(msg, DISPATCHER_ADDRESS)
-        logging.info(f"Sent task to dispatcher: type={task_type}, payload={payload}")
-
-        data, _ = sock.recvfrom(4096)
-        _, response = decode_message(data)
-        logging.info(f"Dispatcher responded to task submission: {response}")
-        print("→ Aufgabe gesendet:", response)
-
+    
+    msg = encode_message(POST_TASK, {
+        "type": task_type,
+        "payload": payload
+    })
+    print(f"Sending to dispatcher {DISPATCHER_ADDRESS[0]}:{DISPATCHER_ADDRESS[1]} - Type: {task_type}, Payload: {payload}")
+    response = send_with_retry(msg, DISPATCHER_ADDRESS)
+    if response:
+        print("Task sent:", response)
+    else:
+        print("Task could not be sent. Dispatcher not reachable.")
 
 def request_result(task_id):
     """
-    Send a GET_RESULT request to the dispatcher to retrieve the result of a task.
-    This function creates a UDP socket, encodes a GET_RESULT message with the given task ID,
-    and sends it to the dispatcher. It then waits for the dispatcher's response, decodes the
-    received message, and prints the result.
+    Request and print the result for a given task from the dispatcher.
+    This function encodes a GET_RESULT message with the provided task_id, sends it to the dispatcher
+    using a retry mechanism, and then prints the response if received. If the dispatcher is not reachable,
+    it prints an error message.
     Parameters:
-        task_id: The unique identifier of the task whose result is being requested.
-    Returns:
-        None
+        task_id (int or str): The identifier of the task for which the result is being requested.
     Side Effects:
-        Outputs the result of the task to the console.
-    Note:
-        This function relies on the global variables GET_RESULT and DISPATCHER_ADDRESS,
-        as well as the helper functions encode_message() and decode_message().
+        Prints output to the console indicating the status of the request and the received result.
     """
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-        msg = encode_message(GET_RESULT, {
-            "task_id": task_id
-        })
-        print(f"📤 Anfrage an Dispatcher {DISPATCHER_ADDRESS[0]}:{DISPATCHER_ADDRESS[1]} – Task-ID: {task_id}")
-        sock.sendto(msg, DISPATCHER_ADDRESS)
-        logging.info(f"Requested result for task ID: {task_id}")
-
-        data, _ = sock.recvfrom(4096)
-        _, response = decode_message(data)
-        logging.info(f"Dispatcher returned result: {response}")
-        print("→ Ergebnisabfrage:", response)
-
-import time
+    
+    msg = encode_message(GET_RESULT, {"task_id": task_id})
+    print(f"Requesting result from dispatcher {DISPATCHER_ADDRESS[0]}:{DISPATCHER_ADDRESS[1]} - Task ID: {task_id}")
+    response = send_with_retry(msg, DISPATCHER_ADDRESS)
+    if response:
+        print("Result received:", response)
+    else:
+        print("Result could not be retrieved. Dispatcher not reachable.")
 
 def simulate():
     """
-    Simulates the execution of multiple tasks by sending task requests over UDP and querying for their results.
-    Procedure:
-        1. Loads the list of tasks from a 'tasks.json' file located in the same directory.
-        2. For each task, creates a UDP socket to send a task message (with type and payload) to a dispatcher.
-        3. Receives and logs the response for each submitted task, extracting and storing task IDs if available.
-        4. After every QUERY_INTERVAL tasks, selects up to 3 random tasks from the list and queries their intermediate results,
-           logging the responses.
-        5. Waits for a short delay after all tasks have been processed, then performs a final query for the results of all tasks,
-           printing the final responses.
-    Notes:
-        - If the 'tasks.json' file is not found, the function prints an error and exits.
-        - Exceptions during socket communication or message processing are caught and logged or printed.
-        - The function uses timing delays to simulate processing intervals and final result waiting.
-    Returns:
-        None
+    Simulates the processing of multiple tasks by reading them from a JSON file, sending them to a dispatcher, 
+    and then periodically querying for intermediate and final results.
+    This function performs the following operations:
+    1. Logs and prints the start of the simulation.
+    2. Constructs the path to "tasks.json" (expected to be in the same directory) and checks its existence.
+    3. Loads tasks from the JSON file, where each task is defined by a task type and its payload.
+    4. Iterates over the tasks:
+        - Encodes a POST_TASK message for each task and sends it to the dispatcher.
+        - Logs and prints information about the sent task.
+        - Extracts and records the task ID from the response if available.
+        - Every QUERY_INTERVAL tasks, randomly selects up to 3 recorded task IDs to query for intermediate results.
+    5. Waits for a short period to allow processing, then queries the dispatcher for the final results of all tasks.
+    6. Outputs the final results or an error if results cannot be retrieved.
+    Note:
+    - The function relies on external functions and constants such as encode_message, send_with_retry, 
+      POST_TASK, GET_RESULT, DISPATCHER_ADDRESS, and standard modules (e.g., os, json, logging, time, random).
+    - Ensure that the "tasks.json" file exists in the expected directory, as its absence will lead to an early exit.
     """
-    print("Simuliere mehrere Aufgaben...")
+    
+    print("Simulating multiple tasks...")
     logging.info("Simulating multiple tasks...")
     logging.info("Dispatcher address: %s", DISPATCHER_ADDRESS)
 
     task_file = os.path.join(os.path.dirname(__file__), "tasks.json")
     if not os.path.isfile(task_file):
-        print(f"❌ Aufgaben-Datei '{task_file}' nicht gefunden.")
+        print(f"Task file '{task_file}' not found.")
         return
 
     with open(task_file, "r") as f:
         tasks = json.load(f)
 
     ids = []
-    QUERY_INTERVAL = 5  # Alle 5 Tasks zwischendurch Ergebnisse abfragen
+    QUERY_INTERVAL = 5
 
     for i, (task_type, payload) in enumerate(tasks):
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-            logging.info(f"[SIMULATION] Successfully created UDP socket for task '{task_type}' connecting to {DISPATCHER_ADDRESS[0]}:{DISPATCHER_ADDRESS[1]}")
-            msg = encode_message(POST_TASK, {
-                "type": task_type,
-                "payload": payload
-            })
-            sock.sendto(msg, DISPATCHER_ADDRESS)
-            try:
-                data, _ = sock.recvfrom(4096)
-                _, response = decode_message(data)
-                print(f"→ Aufgabe '{task_type}' gesendet:", response)
-                logging.info(f"[SIMULATION] Task '{task_type}' sent with payload: {payload}")
-                if "message" in response and "ID" in response["message"]:
-                    try:
-                        task_id = int(response["message"].split("=")[-1].strip())
-                        ids.append(task_id)
-                    except Exception:
-                        pass
-            except Exception as e:
-                print("Fehler beim Senden:", e)
+        msg = encode_message(POST_TASK, {
+            "type": task_type,
+            "payload": payload
+        })
+        response = send_with_retry(msg, DISPATCHER_ADDRESS)
+        if response:
+            print(f"Task '{task_type}' sent with payload: {payload}")
+            logging.info(f"Task '{task_type}' sent with payload: {payload}")
+            if "message" in response and "ID" in response["message"]:
+                try:
+                    task_id = int(response["message"].split("=")[-1].strip())
+                    ids.append(task_id)
+                except Exception:
+                    pass
+        else:
+            logging.error(f"Failed to send task '{task_type}'")
 
         if (i + 1) % QUERY_INTERVAL == 0 and ids:
-            logging.info(f"[SIMULATION] Intermediate results after {i + 1} tasks")
-            for tid in random.sample(ids, min(3, len(ids))):  # max. 3 zufällige Ergebnisse
-                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-                    msg = encode_message(GET_RESULT, {
-                        "task_id": tid
-                    })
-                    sock.sendto(msg, DISPATCHER_ADDRESS)
-                    try:
-                        data, _ = sock.recvfrom(4096)
-                        _, response = decode_message(data)
-                        logging.info(f"[SIMULATION] Intermediate result for task {tid}: {response}")
-                    except Exception as e:
-                        logging.error(f"Fehler beim Abfragen von Task {tid}: {e}")
+            for tid in random.sample(ids, min(3, len(ids))):
+                msg = encode_message(GET_RESULT, {"task_id": tid})
+                response = send_with_retry(msg, DISPATCHER_ADDRESS)
+                if response:
+                    print(f"Intermediate result for task {tid}:", response)
+                else:
+                    print(f"Failed to retrieve result for task {tid}")
 
         time.sleep(1)
 
-    print("\nWarte 5 Sekunden auf finale Verarbeitung...\n")
+    print("\nWaiting 5 seconds for final processing...\n")
     time.sleep(5)
 
-    print("\nFinale Ergebnisabfrage:\n")
+    print("\nFinal result query:\n")
     for task_id in ids:
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-            msg = encode_message(GET_RESULT, {
-                "task_id": task_id
-            })
-            sock.sendto(msg, DISPATCHER_ADDRESS)
-            try:
-                data, _ = sock.recvfrom(4096)
-                _, response = decode_message(data)
-                print(f"→ Ergebnis für Task {task_id}:", response)
-            except Exception as e:
-                print("Fehler beim Abfragen:", e)
+        msg = encode_message(GET_RESULT, {"task_id": task_id})
+        response = send_with_retry(msg, DISPATCHER_ADDRESS)
+        if response:
+            print(f"Result for task {task_id}:", response)
+        else:
+            print(f"Result for task {task_id} could not be retrieved.")
 
 def main():
     """
-    Main entry point of the client application.
-    This function processes command line arguments to either send a new task or request
-    the result of an existing task.
-    Usage:
-        python client.py send <type> <payload>
-            - Sends a new task with the specified type and payload.
-        python client.py result <task_id>
-            - Requests the result for the task identified by task_id.
-    Behavior:
-        - If no or insufficient arguments are provided, it prints the usage instructions.
-        - For the "send" command, it expects exactly two additional arguments (task type and payload).
-        - For the "result" command, it expects exactly one additional argument (the numeric task ID).
-        - Invalid arguments result in an error message indicating the usage format.
+    Main entry point for the client application.
+    Parses command-line arguments to determine the operation mode and execute the corresponding actions:
+        - "send": Sends a new task to the dispatcher. Requires two additional arguments: task type and payload.
+        - "result": Requests the outcome of a previously sent task. Requires one additional argument: the task ID (an integer).
+        - "simulate": Runs the simulation mode.
+        - "run": Initiates interactive mode, allowing repeated commands including "send", "result", and "exit".
+    The dispatcher IP is determined by the environment variable DISPATCHER_IP if set;
+    otherwise, it defaults to the value provided with the --dispatcher-ip argument (default: "127.0.0.1").
+    The dispatcher port is fixed at 4000.
+    Usage examples:
+        New Task:       python client.py send <type> <payload>
+        Query Result:   python client.py result <task_id>
+        Simulation:     python client.py simulate
+        Interactive:    python client.py run
+    Handles improper or missing commands and terminates gracefully on a KeyboardInterrupt.
     """
-    parser = argparse.ArgumentParser(description="Client für das Verteilte-System.")
-    parser.add_argument("--dispatcher-ip", default="127.0.0.1", help="IP-Adresse des Dispatchers (Standard: 127.0.0.1)")
-    parser.add_argument("command", nargs="?", help="Befehl: send, result, simulate, run")
-    parser.add_argument("arg1", nargs="?", help="Zusätzliches Argument 1")
-    parser.add_argument("arg2", nargs="?", help="Zusätzliches Argument 2")
+    
+    parser = argparse.ArgumentParser(description="Client for the distributed system.")
+    parser.add_argument("--dispatcher-ip", default="127.0.0.1", help="Dispatcher IP address (default: 127.0.0.1)")
+    parser.add_argument("command", nargs="?", help="Command: send, result, simulate, run")
+    parser.add_argument("arg1", nargs="?", help="Additional argument 1")
+    parser.add_argument("arg2", nargs="?", help="Additional argument 2")
     args = parser.parse_args()
 
     global DISPATCHER_ADDRESS
@@ -208,7 +209,7 @@ def main():
 
     logging.info("Client started!")
     if not args.command:
-        logging.error("Kein Befehl angegeben.")
+        logging.error("No command provided.")
         print("Usage:")
         print("  New Task: python client.py send <type> <payload>")
         print("  Query Result: python client.py result <task_id>")
@@ -227,15 +228,30 @@ def main():
     elif args.command == "simulate":
         simulate()
     elif args.command == "run":
-        print("Client im Wartezustand. Beende mit STRG+C.")
+        print("Interactive mode started. Enter commands below.")
         try:
             while True:
-                time.sleep(1)
+                action = input("What do you want to do? [send/result/exit]: ").strip().lower()
+                if action == "send":
+                    task_type = input("Task type: ").strip()
+                    payload = input("Payload: ").strip()
+                    send_task(task_type, payload)
+                elif action == "result":
+                    task_id = input("Task ID: ").strip()
+                    try:
+                        task_id = int(task_id)
+                        request_result(task_id)
+                    except ValueError:
+                        print("Invalid Task ID.")
+                elif action == "exit":
+                    print("Exiting client.")
+                    break
+                else:
+                    print("Invalid command.")
         except KeyboardInterrupt:
-            print("Client beendet.")
+            print("Client terminated.")
     else:
         logging.error("Invalid arguments provided.")
-        
 
 if __name__ == "__main__":
     main()
