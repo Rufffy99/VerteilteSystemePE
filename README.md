@@ -42,8 +42,14 @@
 
 Start the system via the interactive terminal menu:
 
+On Mac & Linux
 ```bash
 source start.sh
+```
+
+On Windows
+```bash
+.\start.sh
 ```
 
 You can choose from the following options:
