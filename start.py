@@ -1,5 +1,4 @@
 import os
-import subprocess
 import sys
 import platform
 import json
@@ -9,9 +8,6 @@ from devtools.runner import (
     run_selected_containers, build_selected_containers, build_compose
 )
 from devtools.compose_generator import generate_compose
-
-VENV_DIR = ".venv"
-REQUIREMENTS_FILE = "requirements.txt"
 
 STATIC_CONTAINERS = ["nameservice", "dispatcher", "monitoring", "client"]
 
@@ -32,19 +28,6 @@ def get_all_containers():
 
 def clear_screen():
     os.system("cls" if platform.system() == "Windows" else "clear")
-
-def create_virtualenv():
-    if not os.path.isdir(VENV_DIR):
-        print(f"Creating virtual environment in '{VENV_DIR}' ...")
-        subprocess.run([sys.executable, "-m", "venv", VENV_DIR], check=True)
-
-def get_venv_python():
-    return os.path.join(VENV_DIR, "Scripts" if platform.system() == "Windows" else "bin", "python")
-
-def install_requirements(python_path):
-    print("Installing dependencies from requirements.txt ...")
-    subprocess.run([python_path, "-m", "pip", "install", "--upgrade", "pip"], check=True)
-    subprocess.run([python_path, "-m", "pip", "install", "-r", REQUIREMENTS_FILE], check=True)
 
 def interactive_menu():
     choices = [
@@ -94,9 +77,6 @@ def write_env_file(dispatcher_ip, client_mode):
         f.write(f"CLIENT_MODE={client_mode}\n")
 
 def main():
-    create_virtualenv()
-    python_path = get_venv_python()
-    install_requirements(python_path)
     clear_screen()
 
     while True:
