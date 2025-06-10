@@ -74,11 +74,14 @@ def send_task(task_type, payload):
         "payload": payload
     })
     print(f"Sending to dispatcher {DISPATCHER_ADDRESS[0]}:{DISPATCHER_ADDRESS[1]} - Type: {task_type}, Payload: {payload}")
+    logging.info(f"Sending to dispatcher {DISPATCHER_ADDRESS[0]}:{DISPATCHER_ADDRESS[1]} - Type: {task_type}, Payload: {payload}")
     response = send_with_retry(msg, DISPATCHER_ADDRESS)
     if response:
         print("Task sent:", response)
+        logging.info("Task sent: %s", response)
     else:
         print("Task could not be sent. Dispatcher not reachable.")
+        logging.error("Task could not be sent. Dispatcher not reachable.")
 
 def request_result(task_id):
     """
@@ -94,11 +97,14 @@ def request_result(task_id):
     
     msg = encode_message(GET_RESULT, {"task_id": task_id})
     print(f"Requesting result from dispatcher {DISPATCHER_ADDRESS[0]}:{DISPATCHER_ADDRESS[1]} - Task ID: {task_id}")
+    logging.info(f"Requesting result from dispatcher {DISPATCHER_ADDRESS[0]}:{DISPATCHER_ADDRESS[1]} - Task ID: {task_id}")
     response = send_with_retry(msg, DISPATCHER_ADDRESS)
     if response:
         print("Result received:", response)
+        logging.info("Result received: %s", response)
     else:
         print("Result could not be retrieved. Dispatcher not reachable.")
+        logging.error("Result could not be retrieved. Dispatcher not reachable.")
 
 def simulate():
     """
