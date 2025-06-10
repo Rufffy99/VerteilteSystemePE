@@ -45,15 +45,18 @@ def send_with_retry(msg, address):
     """
     
     for attempt in range(MAX_RETRIES):
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-            sock.sendto(msg, address)
-            sock.settimeout(2)
-            try:
-                data, _ = sock.recvfrom(4096)
-                return decode_message(data)[1]
-            except socket.timeout:
-                logging.warning(f"Timeout on attempt {attempt + 1}, retrying...")
-                time.sleep(RETRY_DELAY)
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+                sock.sendto(msg, address)
+                sock.settimeout(2)
+                try:
+                    data, _ = sock.recvfrom(4096)
+                    return decode_message(data)[1]
+                except socket.timeout:
+                    logging.warning(f"Timeout on attempt {attempt + 1}, retrying...")
+                    time.sleep(RETRY_DELAY)
+        except Exception as e:
+            logging.error(f"Error sending message: {e}")
     return None
 
 def send_task(task_type, payload):
