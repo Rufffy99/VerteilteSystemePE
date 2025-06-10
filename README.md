@@ -40,29 +40,29 @@
 
 ## 🚀 Quickstart
 
-Run everything with one command:
+Start the system via the interactive terminal menu:
 
 ```bash
-python start.py build --reset --no-cache -d
+python start.py
 ```
 
-To view the manual:
+You can choose from the following options:
+- **Build everything** – deletes any old Compose file, asks for client config, and builds all containers
+- **Start everything** – launches all containers (client runs interactively if selected)
+- **Build selected containers** – selectively build one or more containers
+- **Start selected containers** – start only specific containers (client will run interactively if selected alone)
+- **Reset (Logs, Images, Volumes)** – removes all logs, volumes, and Docker images
+- **Regenerate Compose file** – re-create compose file after editing `workers.json`
+- **Cancel** – exit the menu
 
-```bash
-python start.py --man
-```
+### Client modes
 
-You can also regenerate only the compose file:
+During setup, the system will ask:
+1. What IP address the Dispatcher should have
+2. Which client mode to use:
+   - `simulate`: send many tasks, periodically check results
+   - `run`: manual CLI interface for sending and querying tasks
 
-```bash
-python start.py regen-compose
-```
-
-Or reset everything:
-
-```bash
-python start.py reset
-```
 
 ---
 
