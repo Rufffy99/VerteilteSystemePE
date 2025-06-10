@@ -27,7 +27,14 @@ fi
 
 # 3. Activate the virtual environment
 echo "Activating virtual environment in '$VENV_DIR' ..."
-source "$VENV_DIR/bin/activate"
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
+    # Windows
+    source "$VENV_DIR/Scripts/activate"
+else
+    # Unix-like (Linux, macOS)
+    source "$VENV_DIR/bin/activate"
+fi
+
 
 # 4. Install requirements if the virtual environment is new or if modules are missing
 if $CREATED_VENV || [ ! -f "$VENV_DIR/.packages_installed" ]; then
