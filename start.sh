@@ -1,8 +1,15 @@
 #!/bin/bash
 
 VENV_DIR=".venv"
-PYTHON_EXEC="python3"
 REQUIREMENTS_FILE="requirements.txt"
+
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
+    # Windows
+    PYTHON_EXEC="python"
+else
+    # Unix-like (Linux, macOS)
+    PYTHON_EXEC="python3"
+fi
 
 # This script sets up a Python virtual environment, installs dependencies,
 command_exists () {
