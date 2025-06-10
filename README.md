@@ -43,7 +43,7 @@
 Start the system via the interactive terminal menu:
 
 ```bash
-python start.py
+source start.sh
 ```
 
 You can choose from the following options:
